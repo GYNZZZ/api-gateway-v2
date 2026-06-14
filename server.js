@@ -19,6 +19,11 @@ const port = Number(process.env.PORT) || 3000;
 const defaultModel = process.env.DEFAULT_MODEL || "gpt-4.1-mini";
 const adminApiKey = process.env.ADMIN_API_KEY || "";
 const requestCost = 1;
+const rateLimitState = {
+  minute: null,
+  globalCount: 0,
+  userCounts: new Map(),
+};
 
 function isMockMode() {
   return String(process.env.MOCK_MODE || "true").toLowerCase() === "true";
@@ -33,6 +38,39 @@ function redactSecret(value, secret) {
   if (!value || !secret) return String(value || "");
   return String(value).split(secret).join("[redacted]");
 }
+
+function resetRateLimits() {
+  rateLimitState.minute = null;
+  rateLimitState.globalCount = 0;
+  rateLimitState.userCounts.clear();
+}
+
+function consumeRateLimit(userId, settings) {
+  if (settings.rateLimitEnabled === false) return null;
+
+  const minute = Math.floor(Date.now() / 60000);
+  if (rateLimitState.minute !== minute) {
+    resetRateLimits();
+    rateLimitState.minute = minute;
+  }
+
+  const perUserLimit = Number(settings.perUserPerMinute);
+  const globalLimit = Number(settings.globalPerMinute);
+  const userCount = rateLimitState.userCounts.get(userId) || 0;
+
+  if (Number.isFinite(perUserLimit) && perUserLimit > 0 && userCount >= perUserLimit) {
+    return "User rate limit exceeded";
+  }
+  if (Number.isFinite(globalLimit) && globalLimit > 0 && rateLimitState.globalCount >= globalLimit) {
+    return "Global rate limit exceeded";
+  }
+
+  rateLimitState.userCounts.set(userId, userCount + 1);
+  rateLimitState.globalCount += 1;
+  return null;
+}
+
+app.locals.resetRateLimits = resetRateLimits;
 
 const usersFile = process.env.USERS_FILE
   ? path.resolve(process.env.USERS_FILE)
@@ -250,6 +288,23 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
     return res.status(402).json({ error: { message: "Insufficient balance", type: "insufficient_balance" } });
   }
 
+  const rateLimitError = consumeRateLimit(req.user.id, settings);
+  if (rateLimitError) {
+    appendLog({
+      userId: req.user.id,
+      userName: req.user.name,
+      route: req.originalUrl,
+      method: req.method,
+      apiKey: maskApiKey(req.userApiKey),
+      model,
+      status: 429,
+      charged: 0,
+      balance: req.user.balance,
+      error: rateLimitError,
+    });
+    return res.status(429).json({ error: { message: rateLimitError, type: "rate_limit_error" } });
+  }
+
   try {
     let responseBody;
     let responseStatus = 200;
@@ -421,8 +476,18 @@ app.get("/admin/settings", adminAuth, (req, res) => {
 app.patch("/admin/settings", adminAuth, (req, res) => {
   const changes = {};
   if (typeof req.body.maintenanceMode === "boolean") changes.maintenanceMode = req.body.maintenanceMode;
+  if (typeof req.body.rateLimitEnabled === "boolean") changes.rateLimitEnabled = req.body.rateLimitEnabled;
   if (typeof req.body.defaultModel === "string" && req.body.defaultModel.trim()) {
     changes.defaultModel = req.body.defaultModel.trim();
+  }
+  for (const field of ["perUserPerMinute", "globalPerMinute"]) {
+    if (req.body[field] !== undefined) {
+      const value = Number(req.body[field]);
+      if (!Number.isInteger(value) || value < 1) {
+        return res.status(400).json({ error: { message: `${field} must be a positive integer`, type: "invalid_request_error" } });
+      }
+      changes[field] = value;
+    }
   }
   res.json(updateSettings(changes));
 });

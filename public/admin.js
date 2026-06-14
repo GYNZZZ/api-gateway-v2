@@ -16,6 +16,8 @@ const elements = {
   topupAmount: document.querySelector("#topupAmount"), confirmTopup: document.querySelector("#confirmTopup"),
   closeTopup: document.querySelector("#closeTopup"), cancelTopup: document.querySelector("#cancelTopup"),
   maintenanceToggle: document.querySelector("#maintenanceToggle"), defaultModelSelect: document.querySelector("#defaultModelSelect"),
+  rateLimitToggle: document.querySelector("#rateLimitToggle"), perUserPerMinute: document.querySelector("#perUserPerMinute"),
+  globalPerMinute: document.querySelector("#globalPerMinute"),
   saveSettingsButton: document.querySelector("#saveSettingsButton"), providersBody: document.querySelector("#providersBody"),
   providerForm: document.querySelector("#providerForm"), providerId: document.querySelector("#providerId"),
   providerName: document.querySelector("#providerName"), providerBaseUrl: document.querySelector("#providerBaseUrl"),
@@ -120,6 +122,9 @@ function renderLogs() {
 
 function renderConfiguration() {
   elements.maintenanceToggle.checked = Boolean(settings.maintenanceMode);
+  elements.rateLimitToggle.checked = settings.rateLimitEnabled !== false;
+  elements.perUserPerMinute.value = settings.perUserPerMinute ?? 20;
+  elements.globalPerMinute.value = settings.globalPerMinute ?? 100;
   elements.defaultModelSelect.innerHTML = models.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === settings.defaultModel ? "selected" : ""}>${escapeHtml(model.name)} (${escapeHtml(model.id)})</option>`).join("");
   elements.modelProviderId.innerHTML = providers.map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.name)} (${escapeHtml(provider.id)})</option>`).join("");
   elements.providersBody.innerHTML = providers.length ? providers.map((provider) => `<tr><td><code>${escapeHtml(provider.id)}</code></td><td>${escapeHtml(provider.name)}</td><td><div class="config-value">${escapeHtml(provider.baseUrl)}</div></td><td><code>${escapeHtml(provider.apiKeyEnv)}</code></td><td><span class="key-status ${provider.enabled ? "enabled" : "disabled"}">${provider.enabled ? "Enabled" : "Disabled"}</span></td><td class="align-right"><button class="topup-button" data-provider-action="toggle" data-provider-id="${escapeHtml(provider.id)}">${provider.enabled ? "Disable" : "Enable"}</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty-state">No providers</div></td></tr>';
@@ -137,7 +142,18 @@ async function loadConfiguration() {
 async function saveSettings() {
   setButtonLoading(elements.saveSettingsButton, true);
   try {
-    const result = await api("/admin/settings", { method: "PATCH", body: JSON.stringify({ maintenanceMode: elements.maintenanceToggle.checked, defaultModel: elements.defaultModelSelect.value }) });
+    const perUserPerMinute = Number(elements.perUserPerMinute.value);
+    const globalPerMinute = Number(elements.globalPerMinute.value);
+    if (!Number.isInteger(perUserPerMinute) || perUserPerMinute < 1 || !Number.isInteger(globalPerMinute) || globalPerMinute < 1) {
+      throw new Error("Rate limits must be positive integers.");
+    }
+    const result = await api("/admin/settings", { method: "PATCH", body: JSON.stringify({
+      maintenanceMode: elements.maintenanceToggle.checked,
+      defaultModel: elements.defaultModelSelect.value,
+      rateLimitEnabled: elements.rateLimitToggle.checked,
+      perUserPerMinute,
+      globalPerMinute,
+    }) });
     settings = result.data || result; renderConfiguration(); showNotice("Settings saved.");
   } catch (error) { showNotice(error.message, true, true); }
   finally { setButtonLoading(elements.saveSettingsButton, false); }

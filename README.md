@@ -134,3 +134,9 @@ UPSTREAM_TIMEOUT_MS=30000
 ```
 
 The gateway charges one point only after an upstream HTTP 2xx response. Upstream errors, timeouts, missing credentials, and insufficient balance do not deduct balance. Streaming and non-chat OpenAI endpoints are not supported in this version.
+
+## Rate Limiting
+
+Chat completion rate limits are operational settings stored in `config/settings.json`. Administrators can enable or disable rate limiting and change the per-user and global requests-per-minute limits directly from the Runtime settings section of `/admin` or through `PATCH /admin/settings`.
+
+This MVP uses in-memory counters. Counters reset each minute and are also reset whenever the Node.js process restarts. They are not shared across multiple service instances. A production deployment should replace this implementation with Redis or a database-backed distributed rate limiter.

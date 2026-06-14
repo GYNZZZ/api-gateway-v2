@@ -134,7 +134,8 @@ tbody tr:hover { background: #fafaff; }
 .created-key code { display: block; max-width: 650px; overflow: auto; font-size: 10px; }
 .config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .config-grid .panel { margin-top: 0; }
-.settings-form { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: end; gap: 13px; }
+.settings-form { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); align-items: end; gap: 13px; }
+.settings-form .button { justify-self: start; }
 .compact-form { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); align-items: end; gap: 12px; }
 .compact-form .wide { grid-column: 1 / -1; }
 .model-form { grid-template-columns: repeat(5, minmax(120px, 1fr)) auto; margin-bottom: 20px; }

@@ -53,7 +53,13 @@ const initialLogs = [
   },
 ];
 
-const initialSettings = { maintenanceMode: false, defaultModel: "gpt-4.1-mini" };
+const initialSettings = {
+  maintenanceMode: false,
+  defaultModel: "gpt-4.1-mini",
+  rateLimitEnabled: true,
+  perUserPerMinute: 20,
+  globalPerMinute: 100,
+};
 const initialProviders = [
   { id: "openai", name: "OpenAI Compatible", baseUrl: "https://api.openai.com", apiKeyEnv: "UPSTREAM_API_KEY", enabled: true },
 ];
@@ -135,6 +141,7 @@ beforeEach(() => {
   process.env.UPSTREAM_TIMEOUT_MS = "30000";
   fakeUpstreamCalls = 0;
   fakeUpstreamAuthorization = "";
+  app.locals.resetRateLimits();
 });
 
 after(async () => {
@@ -461,4 +468,69 @@ test("missing provider credential returns an error without calling upstream or c
   assert.equal(fakeUpstreamCalls, 0);
   assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 10);
   assert.equal(readJson(logsFile).at(-1).charged, 0);
+});
+
+test("rate limiting is enabled by default", async () => {
+  const response = await request(app).get("/admin/settings").set("x-admin-api-key", "test-admin-key");
+  assert.equal(response.status, 200);
+  assert.equal(response.body.rateLimitEnabled, true);
+  assert.equal(response.body.perUserPerMinute, 20);
+  assert.equal(response.body.globalPerMinute, 100);
+});
+
+test("per-user rate limit returns 429 without charging or calling upstream", async () => {
+  useFakeUpstream();
+  writeJson(settingsFile, { ...initialSettings, perUserPerMinute: 1, globalPerMinute: 10 });
+
+  const first = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "success" }] });
+  const second = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "success" }] });
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 429);
+  assert.equal(second.body.error.type, "rate_limit_error");
+  assert.equal(fakeUpstreamCalls, 1);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+  const latestLog = readJson(logsFile).at(-1);
+  assert.equal(latestLog.status, 429);
+  assert.equal(latestLog.charged, 0);
+});
+
+test("global rate limit applies across users", async () => {
+  writeJson(settingsFile, { ...initialSettings, perUserPerMinute: 10, globalPerMinute: 2 });
+  const call = (apiKey) => request(app).post("/v1/chat/completions")
+    .set("Authorization", `Bearer ${apiKey}`)
+    .send({ messages: [{ role: "user", content: "Hello" }] });
+
+  assert.equal((await call("user-key-001")).status, 200);
+  assert.equal((await call("user-key-002")).status, 200);
+  const limited = await call("user-key-001");
+  assert.equal(limited.status, 429);
+  assert.equal(limited.body.error.message, "Global rate limit exceeded");
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+});
+
+test("admin can update rate limit settings", async () => {
+  const response = await request(app).patch("/admin/settings")
+    .set("x-admin-api-key", "test-admin-key")
+    .send({ rateLimitEnabled: true, perUserPerMinute: 7, globalPerMinute: 33 });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.rateLimitEnabled, true);
+  assert.equal(response.body.perUserPerMinute, 7);
+  assert.equal(response.body.globalPerMinute, 33);
+  assert.deepEqual(readJson(settingsFile), { ...initialSettings, perUserPerMinute: 7, globalPerMinute: 33 });
+});
+
+test("disabling rate limiting removes request limits", async () => {
+  writeJson(settingsFile, { ...initialSettings, rateLimitEnabled: false, perUserPerMinute: 1, globalPerMinute: 1 });
+  for (let index = 0; index < 3; index += 1) {
+    const response = await request(app).post("/v1/chat/completions")
+      .set("Authorization", "Bearer user-key-001")
+      .send({ messages: [{ role: "user", content: "Hello" }] });
+    assert.equal(response.status, 200);
+  }
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 7);
 });

@@ -1,4 +1,7 @@
-﻿{
+{
   "maintenanceMode": false,
-  "defaultModel": "gpt-4.1-mini"
+  "defaultModel": "gpt-4.1-mini",
+  "rateLimitEnabled": true,
+  "perUserPerMinute": 20,
+  "globalPerMinute": 100
 }

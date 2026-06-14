@@ -92,10 +92,13 @@
           <div class="section-heading"><div><p class="eyebrow">Gateway configuration</p><h2>Provider / Model Configuration</h2></div></div>
           <div class="config-grid">
             <article class="panel config-card">
-              <div class="panel-heading"><div><p class="eyebrow">Settings</p><h2>Runtime settings</h2><p>Configure maintenance mode and the default model.</p></div></div>
+              <div class="panel-heading"><div><p class="eyebrow">Settings</p><h2>Runtime settings</h2><p>Configure maintenance, default model, and in-memory request limits.</p></div></div>
               <div class="settings-form">
                 <label class="toggle-field"><input id="maintenanceToggle" type="checkbox"><span>Maintenance mode</span></label>
                 <label class="field"><span>Default model</span><select id="defaultModelSelect"></select></label>
+                <label class="toggle-field"><input id="rateLimitToggle" type="checkbox"><span>Rate limiting</span></label>
+                <label class="field"><span>Per user / minute</span><input id="perUserPerMinute" type="number" min="1" step="1" required></label>
+                <label class="field"><span>Global / minute</span><input id="globalPerMinute" type="number" min="1" step="1" required></label>
                 <button id="saveSettingsButton" class="button primary" type="button">Save settings</button>
               </div>
             </article>
