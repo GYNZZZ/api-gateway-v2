@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Docs - API Gateway</title><link rel="stylesheet" href="/docs.css">
+</head>
+<body>
+  <header class="docs-header"><a class="brand" href="/"><span class="brand-mark">AG</span><span>API Gateway</span></a><nav><a href="/">官网首页</a><a href="/dashboard">Dashboard</a><a href="/admin">Admin</a></nav></header>
+  <div class="docs-layout">
+    <aside class="docs-sidebar"><div><span>API DOCUMENTATION</span><strong>开发者文档</strong></div><nav><a class="active" href="#introduction">开始使用</a><a href="#auth">身份鉴权</a><a href="#chat">Chat Completions</a><a href="#me">用户信息</a><a href="#logs">用户日志</a><a href="#admin-api">管理员接口</a><a href="#errors">错误码</a><a href="#examples">语言示例</a></nav></aside>
+    <main class="docs-content">
+      <section id="introduction" class="doc-section intro"><span class="kicker">API Reference</span><h1>API Gateway 开发者文档</h1><p>通过 OpenAI-compatible 接口访问模型，同时使用统一的 API Key、余额和日志管理能力。</p><div class="base-url"><div><span>Base URL</span><code id="baseUrl">http://localhost:3000</code></div><button class="copy-button" data-copy-target="baseUrl">复制</button></div></section>
+      <section id="auth" class="doc-section"><div class="heading-row"><div><span class="kicker">Authentication</span><h2>身份鉴权</h2></div></div><p>所有用户接口都需要在请求头中携带用户 API Key。</p><div class="code-block"><div class="code-title"><span>HTTP Header</span><button class="copy-button" data-copy-target="authCode">复制</button></div><pre><code id="authCode">Authorization: Bearer &lt;user-api-key&gt;</code></pre></div><div class="callout">不要把 API Key 放在查询参数、公开仓库或客户端日志中。</div></section>
+      <section id="chat" class="doc-section endpoint"><div class="endpoint-title"><span class="method post">POST</span><h2>/v1/chat/completions</h2></div><p>发送 OpenAI-compatible 聊天请求。成功响应后会扣除当前账户余额并记录调用日志。</p><h3>请求示例</h3><div class="code-block"><div class="code-title"><span>JSON</span><button class="copy-button" data-copy-target="chatRequest">复制</button></div><pre><code id="chatRequest">{
+  "model": "gpt-4.1-mini",
+  "messages": [
+    { "role": "user", "content": "Hello" }
+  ]
+}</code></pre></div><h3>返回示例</h3><div class="code-block"><pre><code>{
+  "id": "chatcmpl-example",
+  "object": "chat.completion",
+  "model": "gpt-4.1-mini",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "Hello!" },
+    "finish_reason": "stop"
+  }]
+}</code></pre></div></section>
+      <section id="me" class="doc-section endpoint"><div class="endpoint-title"><span class="method get">GET</span><h2>/v1/me</h2></div><p>查询当前 API Key 所属用户的基本信息与余额。</p><div class="two-columns"><div><h3>请求示例</h3><div class="code-block"><pre><code>GET /v1/me
+Authorization: Bearer &lt;user-api-key&gt;</code></pre></div></div><div><h3>返回示例</h3><div class="code-block"><pre><code>{
+  "id": 1,
+  "name": "test_user_1",
+  "balance": 100
+}</code></pre></div></div></div></section>
+      <section id="logs" class="doc-section endpoint"><div class="endpoint-title"><span class="method get">GET</span><h2>/v1/logs</h2></div><p>返回当前用户自己的调用日志，不会返回其他账户的数据。</p><div class="two-columns"><div><h3>请求示例</h3><div class="code-block"><pre><code>GET /v1/logs
+Authorization: Bearer &lt;user-api-key&gt;</code></pre></div></div><div><h3>返回示例</h3><div class="code-block"><pre><code>{
+  "total": 1,
+  "data": [{
+    "route": "/v1/chat/completions",
+    "status": 200,
+    "charged": 1,
+    "durationMs": 12
+  }]
+}</code></pre></div></div></div></section>
+      <section id="admin-api" class="doc-section"><span class="kicker">Administration</span><h2>管理员接口</h2><p>管理员接口使用单独的请求头，不应暴露给普通用户。</p><div class="code-block"><pre><code>x-admin-api-key: &lt;admin-api-key&gt;</code></pre></div><div class="endpoint-list"><div><span class="method get">GET</span><code>/admin/users</code><p>获取全部用户列表</p></div><div><span class="method get">GET</span><code>/admin/logs</code><p>获取全部调用日志</p></div></div></section>
+      <section id="errors" class="doc-section"><span class="kicker">Errors</span><h2>错误码说明</h2><div class="error-grid"><article><strong>401</strong><div><h3>未授权</h3><p>API Key 缺失或无效。</p></div></article><article><strong>402</strong><div><h3>余额不足</h3><p>账户额度不足以完成调用。</p></div></article><article><strong>429</strong><div><h3>请求过多</h3><p>为后续限流能力预留。</p></div></article><article><strong>500</strong><div><h3>服务器错误</h3><p>服务内部发生异常。</p></div></article><article><strong>502</strong><div><h3>上游错误</h3><p>上游服务失败或不可用。</p></div></article></div></section>
+      <section id="examples" class="doc-section"><span class="kicker">Code examples</span><h2>语言示例</h2><div class="tabs" role="tablist"><button class="tab active" data-tab="curl">Windows curl.exe</button><button class="tab" data-tab="node">Node.js fetch</button><button class="tab" data-tab="python">Python requests</button></div>
+        <div class="tab-panel active" data-panel="curl"><div class="code-block"><div class="code-title"><span>CMD</span><button class="copy-button" data-copy-target="curlCode">复制</button></div><pre><code id="curlCode">curl.exe -X POST http://localhost:3000/v1/chat/completions ^
+  -H "Authorization: Bearer user-key-001" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"model\":\"gpt-4.1-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"</code></pre></div></div>
+        <div class="tab-panel" data-panel="node"><div class="code-block"><div class="code-title"><span>JavaScript</span><button class="copy-button" data-copy-target="nodeCode">复制</button></div><pre><code id="nodeCode">const response = await fetch("http://localhost:3000/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer user-key-001",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    model: "gpt-4.1-mini",
+    messages: [{ role: "user", content: "Hello" }]
+  })
+});
+console.log(await response.json());</code></pre></div></div>
+        <div class="tab-panel" data-panel="python"><div class="code-block"><div class="code-title"><span>Python</span><button class="copy-button" data-copy-target="pythonCode">复制</button></div><pre><code id="pythonCode">import requests
+
+response = requests.post(
+    "http://localhost:3000/v1/chat/completions",
+    headers={"Authorization": "Bearer user-key-001"},
+    json={
+        "model": "gpt-4.1-mini",
+        "messages": [{"role": "user", "content": "Hello"}],
+    },
+)
+print(response.json())</code></pre></div></div>
+      </section>
+      <footer class="docs-footer">API Gateway · OpenAI-compatible API documentation</footer>
+    </main>
+  </div>
+  <script src="/docs.js" defer></script>
+</body>
+</html>

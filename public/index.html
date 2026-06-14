@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="统一管理 AI API 调用、余额和日志的 OpenAI-compatible API Gateway。">
+  <title>API Gateway - AI API 统一管理平台</title>
+  <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AG</span><span>API Gateway</span></a>
+    <nav class="nav"><a href="#features">功能</a><a href="#workflow">使用流程</a><a href="#pricing">开通方式</a><a href="/docs">API Docs</a></nav>
+    <a class="button small ghost" href="/dashboard">用户中心</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-glow one"></div><div class="hero-glow two"></div>
+      <div class="hero-copy">
+        <div class="badge"><span></span> OpenAI-compatible Gateway</div>
+        <h1>统一管理你的<br><em>AI API</em> 调用、余额和日志</h1>
+        <p>一个清晰、轻量的 AI API 网关。用统一 API Key 管理访问权限、账户额度与调用审计，让模型接入更简单。</p>
+        <div class="hero-actions"><a class="button primary" href="/dashboard">进入用户中心</a><a class="button secondary" href="/docs">查看 API 文档</a><a class="text-link" href="/admin">管理后台 <span>→</span></a></div>
+        <div class="trust-row"><span>Node.js + Express</span><span>JSON audit logs</span><span>Bearer authentication</span></div>
+      </div>
+      <div class="hero-console" aria-label="API 调用示例">
+        <div class="console-bar"><div><i></i><i></i><i></i></div><span>POST /v1/chat/completions</span><b>200 OK</b></div>
+        <pre><code><span class="muted">curl</span> <span class="blue">https://gateway.example.com</span>\
+  /v1/chat/completions \
+  -H <span class="green">"Authorization: Bearer YOUR_KEY"</span> \
+  -H <span class="green">"Content-Type: application/json"</span> \
+  -d <span class="purple">'{
+    "model": "gpt-4.1-mini",
+    "messages": [{
+      "role": "user",
+      "content": "Hello"
+    }]
+  }'</span></code></pre>
+        <div class="console-result"><span>✓ Authenticated</span><span>✓ Balance charged</span><span>✓ Log recorded</span></div>
+      </div>
+    </section>
+
+    <section id="features" class="section container">
+      <div class="section-intro"><span class="kicker">Everything in one place</span><h2>从鉴权到审计，一套网关完成</h2><p>保留 OpenAI-compatible 调用体验，同时把账户管理能力集中到一个轻量服务中。</p></div>
+      <div class="feature-grid">
+        <article><span class="feature-icon violet">K</span><h3>API Key 管理</h3><p>为不同用户分配独立凭证，隔离调用权限与账户数据。</p></article>
+        <article><span class="feature-icon blue">B</span><h3>余额扣费</h3><p>成功调用自动扣减额度，余额不足时返回明确错误。</p></article>
+        <article><span class="feature-icon cyan">L</span><h3>调用日志</h3><p>记录路由、模型、状态、扣费和耗时，方便审计排查。</p></article>
+        <article><span class="feature-icon indigo">A</span><h3>管理后台</h3><p>集中查看用户和日志，创建账户并手动补充余额。</p></article>
+        <article><span class="feature-icon pink">D</span><h3>用户中心</h3><p>用户使用自己的 Key 查看余额、凭证和个人调用记录。</p></article>
+        <article><span class="feature-icon green">O</span><h3>OpenAI-compatible</h3><p>兼容常见 Chat Completions 请求格式，降低迁移成本。</p></article>
+      </div>
+    </section>
+
+    <section id="workflow" class="section workflow-section">
+      <div class="container"><div class="section-intro light"><span class="kicker">Quick start</span><h2>四步开始调用</h2><p>不需要复杂集成，从获取凭证到查看日志只需几分钟。</p></div>
+        <div class="steps">
+          <article><span>01</span><div><h3>创建用户</h3><p>管理员在后台创建账户并设置初始余额。</p></div></article>
+          <article><span>02</span><div><h3>获取 API Key</h3><p>保存系统生成的用户凭证，用于后续鉴权。</p></div></article>
+          <article><span>03</span><div><h3>调用接口</h3><p>通过 Bearer Token 请求 OpenAI-compatible API。</p></div></article>
+          <article><span>04</span><div><h3>查看余额和日志</h3><p>进入用户中心了解额度与每一次调用状态。</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" class="section container pricing-section">
+      <div class="pricing-card"><div><span class="kicker">Early access</span><h2>测试阶段 · 手动开通</h2><p>当前版本专注于产品验证和 API 接入体验，暂不提供在线注册与支付。</p><ul><li>独立用户 API Key</li><li>手动配置初始额度</li><li>用户中心与调用日志</li><li>OpenAI-compatible 接口</li></ul></div><div class="price-side"><span>当前方案</span><strong>联系管理员</strong><small>创建测试账户并分配额度</small><a class="button primary" href="/docs">开始阅读文档</a></div></div>
+    </section>
+
+    <section class="cta container"><div><span class="kicker">Build with confidence</span><h2>准备好接入统一 AI API 了吗？</h2><p>阅读文档，使用现有 API Key 发出第一个请求。</p></div><div><a class="button primary" href="/docs">查看 API Docs</a><a class="button secondary" href="/dashboard">打开 Dashboard</a></div></section>
+  </main>
+
+  <footer><div class="footer-inner"><div><a class="brand" href="/"><span class="brand-mark">AG</span><span>API Gateway</span></a><p>轻量、透明的 AI API 管理网关。</p></div><div class="footer-links"><div><strong>Product</strong><a href="/dashboard">Dashboard</a><a href="/admin">Admin</a></div><div><strong>Developers</strong><a href="/docs">API Docs</a><a href="/health">Health</a></div><div><strong>Project</strong><a href="https://github.com/GYNZZZ/api-gateway-v2" target="_blank" rel="noreferrer">GitHub</a><span>Node.js + Express</span></div></div></div><div class="copyright">API Gateway · OpenAI-compatible API management</div></footer>
+</body>
+</html>
