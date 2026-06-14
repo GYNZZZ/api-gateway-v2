@@ -16,12 +16,23 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const mockMode = String(process.env.MOCK_MODE || "true").toLowerCase() === "true";
-const upstreamBaseUrl = (process.env.UPSTREAM_BASE_URL || "https://api.openai.com").replace(/\/$/, "");
-const upstreamApiKey = process.env.UPSTREAM_API_KEY || "";
 const defaultModel = process.env.DEFAULT_MODEL || "gpt-4.1-mini";
 const adminApiKey = process.env.ADMIN_API_KEY || "";
 const requestCost = 1;
+
+function isMockMode() {
+  return String(process.env.MOCK_MODE || "true").toLowerCase() === "true";
+}
+
+function getUpstreamTimeoutMs() {
+  const timeout = Number(process.env.UPSTREAM_TIMEOUT_MS || 30000);
+  return Number.isFinite(timeout) && timeout > 0 ? timeout : 30000;
+}
+
+function redactSecret(value, secret) {
+  if (!value || !secret) return String(value || "");
+  return String(value).split(secret).join("[redacted]");
+}
 
 const usersFile = process.env.USERS_FILE
   ? path.resolve(process.env.USERS_FILE)
@@ -145,7 +156,7 @@ function adminAuth(req, res, next) {
 }
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", mockMode, timestamp: new Date().toISOString() });
+  res.json({ status: "ok", mockMode: isMockMode(), timestamp: new Date().toISOString() });
 });
 
 app.get("/", (req, res) => {
@@ -242,6 +253,7 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
   try {
     let responseBody;
     let responseStatus = 200;
+    const mockMode = isMockMode();
 
     if (mockMode) {
       responseBody = {
@@ -259,7 +271,95 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       };
     } else {
-      throw new Error("Real upstream requests are disabled in this version");
+      const upstreamApiKey = process.env[provider.apiKeyEnv];
+      if (!upstreamApiKey) {
+        appendLog({
+          userId: req.user.id,
+          userName: req.user.name,
+          route: req.originalUrl,
+          method: req.method,
+          apiKey: maskApiKey(req.userApiKey),
+          model,
+          providerId: provider.id,
+          status: 502,
+          charged: 0,
+          durationMs: Date.now() - startedAt,
+          mode: "upstream",
+          error: `Missing upstream credential environment variable: ${provider.apiKeyEnv}`,
+        });
+        return res.status(502).json({ error: { message: "Upstream provider is not configured", type: "upstream_configuration_error" } });
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), getUpstreamTimeoutMs());
+      let upstreamResponse;
+      try {
+        upstreamResponse = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${upstreamApiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ ...req.body, model }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          appendLog({
+            userId: req.user.id,
+            userName: req.user.name,
+            route: req.originalUrl,
+            method: req.method,
+            apiKey: maskApiKey(req.userApiKey),
+            model,
+            providerId: provider.id,
+            status: 504,
+            charged: 0,
+            durationMs: Date.now() - startedAt,
+            mode: "upstream",
+            error: "Upstream request timed out",
+          });
+          return res.status(504).json({ error: { message: "Upstream request timed out", type: "upstream_timeout" } });
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      responseStatus = upstreamResponse.status;
+      const responseText = await upstreamResponse.text();
+      try {
+        responseBody = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        responseBody = { error: { message: "Upstream returned a non-JSON response", type: "upstream_error" } };
+      }
+
+      if (!upstreamResponse.ok) {
+        const upstreamMessage = redactSecret(
+          responseBody?.error?.message || `Upstream request failed with HTTP ${responseStatus}`,
+          upstreamApiKey
+        );
+        appendLog({
+          userId: req.user.id,
+          userName: req.user.name,
+          route: req.originalUrl,
+          method: req.method,
+          apiKey: maskApiKey(req.userApiKey),
+          model,
+          providerId: provider.id,
+          status: responseStatus,
+          charged: 0,
+          durationMs: Date.now() - startedAt,
+          mode: "upstream",
+          error: upstreamMessage,
+        });
+        return res.status(responseStatus).json({
+          error: {
+            message: upstreamMessage,
+            type: responseBody?.error?.type || "upstream_error",
+          },
+        });
+      }
     }
 
     const users = readUsers();
@@ -282,6 +382,8 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
       balanceAfter: currentUser.balance,
       durationMs: Date.now() - startedAt,
       mode: mockMode ? "mock" : "upstream",
+      providerId: provider.id,
+      usage: responseBody.usage,
     });
 
     return res.status(responseStatus).json(responseBody);
@@ -492,7 +594,7 @@ app.use((error, req, res, next) => {
 if (require.main === module) {
   app.listen(port, () => {
     console.log(`api-gateway-v2 listening on http://localhost:${port}`);
-    console.log(`MOCK_MODE=${mockMode}`);
+    console.log(`MOCK_MODE=${isMockMode()}`);
   });
 }
 

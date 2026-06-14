@@ -32,8 +32,8 @@ Enter the value of `ADMIN_API_KEY` in the admin page. The page sends it through 
 | Variable | Description | Example |
 | --- | --- | --- |
 | `MOCK_MODE` | Return mock responses instead of calling the upstream API | `true` |
-| `UPSTREAM_BASE_URL` | Upstream OpenAI-compatible API base URL | `https://api.openai.com` |
 | `UPSTREAM_API_KEY` | Secret API key for the upstream service | Set in the hosting dashboard |
+| `UPSTREAM_TIMEOUT_MS` | Upstream request timeout in milliseconds | `30000` |
 | `DEFAULT_MODEL` | Model used when a request does not specify one | `gpt-4.1-mini` |
 | `ADMIN_API_KEY` | Secret key used by admin APIs and the admin page | Set in the hosting dashboard |
 
@@ -103,7 +103,7 @@ npm install
 npm test
 ```
 
-The tests use Node.js's built-in test runner with Supertest. They force `MOCK_MODE=true`, use temporary `USERS_FILE` and `LOGS_FILE` paths, and never call the real upstream API or modify the project's `users.json` and `logs.json` files.
+The tests use Node.js's built-in test runner with Supertest. Most tests use `MOCK_MODE=true`; upstream forwarding tests use a temporary local fake server with `MOCK_MODE=false`. They never call an external upstream API or modify the project's `users.json` and `logs.json` files.
 
 `USERS_FILE` and `LOGS_FILE` can also be configured through environment variables when a custom JSON data location is needed.
 
@@ -119,4 +119,18 @@ Gateway settings are stored in `config/settings.json`, providers in `config/prov
 
 `GET /v1/models` returns models that are enabled and belong to an enabled provider. Chat requests use `settings.defaultModel` when no model is supplied. Maintenance mode and disabled model/provider checks happen before charging the user.
 
-This version remains intentionally mock-only. `MOCK_MODE=true` returns local mock completions, and real upstream requests are disabled even though provider metadata contains a base URL and environment variable name.
+With `MOCK_MODE=true`, chat completions are generated locally and no upstream request is made. With `MOCK_MODE=false`, the gateway finds the requested model and provider, then forwards the request to `<provider.baseUrl>/v1/chat/completions`.
+
+Each provider's `apiKeyEnv` field contains only an environment variable name, such as `UPSTREAM_API_KEY`. Put the real credential in that environment variable through `.env` for local development or the hosting platform's secret settings. Never place a real upstream key in `providers.json`, source code, logs, or browser pages.
+
+The upstream base URL comes from the provider's `baseUrl` field in `config/providers.json`; it is not read from an API key environment variable.
+
+Example:
+
+```text
+MOCK_MODE=false
+UPSTREAM_API_KEY=replace-with-a-real-secret
+UPSTREAM_TIMEOUT_MS=30000
+```
+
+The gateway charges one point only after an upstream HTTP 2xx response. Upstream errors, timeouts, missing credentials, and insufficient balance do not deduct balance. Streaming and non-chat OpenAI endpoints are not supported in this version.

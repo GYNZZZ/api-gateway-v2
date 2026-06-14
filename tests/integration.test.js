@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const request = require("supertest");
 const crypto = require("node:crypto");
+const http = require("node:http");
 
 const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "api-gateway-v2-test-"));
 const usersFile = path.join(tempDirectory, "users.json");
@@ -84,8 +85,42 @@ process.env.PROVIDERS_FILE = providersFile;
 process.env.MODELS_FILE = modelsFile;
 
 let app;
+let fakeUpstream;
+let fakeUpstreamBaseUrl;
+let fakeUpstreamCalls = 0;
+let fakeUpstreamAuthorization = "";
 
-before(() => {
+before(async () => {
+  fakeUpstream = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      fakeUpstreamCalls += 1;
+      fakeUpstreamAuthorization = req.headers.authorization || "";
+      const payload = JSON.parse(body || "{}");
+      const scenario = payload.messages?.[0]?.content;
+      res.setHeader("content-type", "application/json");
+      if (scenario === "fail") {
+        res.writeHead(429);
+        return res.end(JSON.stringify({ error: { message: "Fake rate limit", type: "rate_limit_error" } }));
+      }
+      if (scenario === "timeout") {
+        return setTimeout(() => {
+          if (!res.destroyed) res.end(JSON.stringify({ id: "late-response" }));
+        }, 200);
+      }
+      res.writeHead(200);
+      return res.end(JSON.stringify({
+        id: "chatcmpl-fake-upstream",
+        object: "chat.completion",
+        model: payload.model,
+        choices: [{ index: 0, message: { role: "assistant", content: "Fake upstream response" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+      }));
+    });
+  });
+  await new Promise((resolve) => fakeUpstream.listen(0, "127.0.0.1", resolve));
+  fakeUpstreamBaseUrl = `http://127.0.0.1:${fakeUpstream.address().port}`;
   app = require("../server");
 });
 
@@ -95,11 +130,23 @@ beforeEach(() => {
   writeJson(settingsFile, initialSettings);
   writeJson(providersFile, initialProviders);
   writeJson(modelsFile, initialModels);
+  process.env.MOCK_MODE = "true";
+  process.env.UPSTREAM_API_KEY = "";
+  process.env.UPSTREAM_TIMEOUT_MS = "30000";
+  fakeUpstreamCalls = 0;
+  fakeUpstreamAuthorization = "";
 });
 
-after(() => {
+after(async () => {
+  await new Promise((resolve) => fakeUpstream.close(resolve));
   fs.rmSync(tempDirectory, { recursive: true, force: true });
 });
+
+function useFakeUpstream() {
+  writeJson(providersFile, [{ ...initialProviders[0], baseUrl: fakeUpstreamBaseUrl }]);
+  process.env.MOCK_MODE = "false";
+  process.env.UPSTREAM_API_KEY = "fake-upstream-secret";
+}
 
 test("public pages and health endpoint return 200", async () => {
   for (const endpoint of ["/health", "/", "/docs", "/admin", "/dashboard"]) {
@@ -340,4 +387,78 @@ test("admin can create and update providers and models", async () => {
   assert.equal(modelUpdate.body.enabled, false);
   const settings = await request(app).get("/admin/settings").set("x-admin-api-key", "test-admin-key");
   assert.equal(settings.body.defaultModel, "demo-model");
+});
+
+test("MOCK_MODE=true never calls the configured upstream", async () => {
+  writeJson(providersFile, [{ ...initialProviders[0], baseUrl: fakeUpstreamBaseUrl }]);
+  process.env.UPSTREAM_API_KEY = "fake-upstream-secret";
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ model: "gpt-4.1-mini", messages: [{ role: "user", content: "success" }] });
+  assert.equal(response.status, 200);
+  assert.match(response.body.id, /^chatcmpl-mock-/);
+  assert.equal(fakeUpstreamCalls, 0);
+});
+
+test("MOCK_MODE=false forwards to fake upstream and charges on success", async () => {
+  useFakeUpstream();
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "success" }] });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.id, "chatcmpl-fake-upstream");
+  assert.equal(response.body.model, "gpt-4.1-mini");
+  assert.equal(fakeUpstreamCalls, 1);
+  assert.equal(fakeUpstreamAuthorization, "Bearer fake-upstream-secret");
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+  const latestLog = readJson(logsFile).at(-1);
+  assert.equal(latestLog.mode, "upstream");
+  assert.deepEqual(latestLog.usage, { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 });
+  assert.equal(JSON.stringify(latestLog).includes("fake-upstream-secret"), false);
+});
+
+test("upstream HTTP failure is returned and does not charge", async () => {
+  useFakeUpstream();
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ model: "gpt-4.1-mini", messages: [{ role: "user", content: "fail" }] });
+  assert.equal(response.status, 429);
+  assert.equal(response.body.error.message, "Fake rate limit");
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 10);
+  assert.equal(readJson(logsFile).at(-1).charged, 0);
+});
+
+test("upstream timeout returns 504 and does not charge", async () => {
+  useFakeUpstream();
+  process.env.UPSTREAM_TIMEOUT_MS = "30";
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ model: "gpt-4.1-mini", messages: [{ role: "user", content: "timeout" }] });
+  assert.equal(response.status, 504);
+  assert.equal(response.body.error.type, "upstream_timeout");
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 10);
+  assert.equal(readJson(logsFile).at(-1).charged, 0);
+});
+
+test("insufficient balance does not call upstream", async () => {
+  useFakeUpstream();
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer empty-key-003")
+    .send({ model: "gpt-4.1-mini", messages: [{ role: "user", content: "success" }] });
+  assert.equal(response.status, 402);
+  assert.equal(fakeUpstreamCalls, 0);
+  assert.equal(readJson(usersFile).find((user) => user.id === 3).balance, 0);
+});
+
+test("missing provider credential returns an error without calling upstream or charging", async () => {
+  useFakeUpstream();
+  delete process.env.UPSTREAM_API_KEY;
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ model: "gpt-4.1-mini", messages: [{ role: "user", content: "success" }] });
+  assert.equal(response.status, 502);
+  assert.equal(response.body.error.type, "upstream_configuration_error");
+  assert.equal(fakeUpstreamCalls, 0);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 10);
+  assert.equal(readJson(logsFile).at(-1).charged, 0);
 });
