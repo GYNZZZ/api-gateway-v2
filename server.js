@@ -93,8 +93,17 @@ app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+app.get("/dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
 app.get("/v1/me", userAuth, (req, res) => {
   res.json({ id: req.user.id, name: req.user.name, balance: req.user.balance });
+});
+
+app.get("/v1/logs", userAuth, (req, res) => {
+  const logs = readJson(logsFile).filter((log) => log.userId === req.user.id);
+  res.json({ total: logs.length, data: logs.slice().reverse() });
 });
 
 app.post("/v1/chat/completions", userAuth, async (req, res) => {
