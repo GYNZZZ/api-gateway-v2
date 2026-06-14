@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Gateway Admin</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color: #1f2937; background: #f3f4f6; }
+    body { margin: 0; } main { width: min(1100px, calc(100% - 32px)); margin: 32px auto; }
+    h1, h2 { margin-top: 0; } .card { background: white; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 10px #00000012; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    label { display: grid; gap: 6px; flex: 1; min-width: 180px; font-size: 14px; }
+    input, button { box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid #d1d5db; font: inherit; }
+    button { cursor: pointer; border: 0; background: #2563eb; color: white; } button.secondary { background: #4b5563; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    .table-wrap { overflow-x: auto; } .status { min-height: 20px; margin: 10px 0 0; color: #047857; } .status.error { color: #b91c1c; } code { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>API Gateway 后台</h1>
+    <section class="card">
+      <div class="row"><label>管理员 Key<input id="adminKey" type="password" placeholder="x-admin-api-key" autocomplete="off"></label><button id="loadButton">连接并刷新</button></div>
+      <p id="status" class="status">请输入管理员 Key。</p>
+    </section>
+    <section class="card">
+      <h2>创建用户</h2>
+      <form id="createForm" class="row">
+        <label>用户名<input id="newName" required></label>
+        <label>初始余额<input id="newBalance" type="number" min="0" step="0.01" value="0" required></label>
+        <label>API Key（留空自动生成）<input id="newApiKey"></label>
+        <button type="submit">创建</button>
+      </form>
+    </section>
+    <section class="card"><h2>用户列表</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>API Key</th><th>余额</th><th>充值</th></tr></thead><tbody id="usersBody"></tbody></table></div></section>
+    <section class="card"><h2>调用日志</h2><div class="table-wrap"><table><thead><tr><th>时间</th><th>用户</th><th>接口</th><th>模型</th><th>状态</th><th>扣费</th><th>Key</th></tr></thead><tbody id="logsBody"></tbody></table></div></section>
+  </main>
+  <script>
+    const adminKeyInput = document.querySelector("#adminKey");
+    const statusElement = document.querySelector("#status");
+    const usersBody = document.querySelector("#usersBody");
+    const logsBody = document.querySelector("#logsBody");
+    function setStatus(message, isError = false) { statusElement.textContent = message; statusElement.classList.toggle("error", isError); }
+    function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[char]); }
+    async function api(url, options = {}) {
+      const response = await fetch(url, { ...options, headers: { "content-type": "application/json", "x-admin-api-key": adminKeyInput.value.trim(), ...(options.headers || {}) } });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || `HTTP ${response.status}`);
+      return body;
+    }
+    async function loadUsers() {
+      const result = await api("/admin/users");
+      usersBody.innerHTML = result.data.map((user) => `<tr><td>${user.id}</td><td>${escapeHtml(user.name)}</td><td><code>${escapeHtml(user.apiKey)}</code></td><td>${user.balance}</td><td><button class="secondary" data-topup="${user.id}">加余额</button></td></tr>`).join("");
+    }
+    async function loadLogs() {
+      const result = await api("/admin/logs");
+      logsBody.innerHTML = result.data.map((log) => `<tr><td>${escapeHtml(new Date(log.timestamp).toLocaleString())}</td><td>${escapeHtml(log.userName || log.userId || "-")}</td><td>${escapeHtml(`${log.method || ""} ${log.route || ""}`)}</td><td>${escapeHtml(log.model || "-")}</td><td>${escapeHtml(log.status)}</td><td>${escapeHtml(log.charged)}</td><td><code>${escapeHtml(log.apiKey || "-")}</code></td></tr>`).join("");
+    }
+    async function refresh() { try { await Promise.all([loadUsers(), loadLogs()]); setStatus("数据已刷新。"); } catch (error) { setStatus(error.message, true); } }
+    document.querySelector("#loadButton").addEventListener("click", refresh);
+    document.querySelector("#createForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const user = await api("/admin/users", { method: "POST", body: JSON.stringify({ name: document.querySelector("#newName").value, balance: Number(document.querySelector("#newBalance").value), apiKey: document.querySelector("#newApiKey").value }) });
+        event.target.reset(); document.querySelector("#newBalance").value = "0"; setStatus(`用户 ${user.name} 已创建，API Key: ${user.apiKey}`); await loadUsers();
+      } catch (error) { setStatus(error.message, true); }
+    });
+    usersBody.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-topup]"); if (!button) return;
+      const amount = Number(window.prompt("请输入增加的余额：", "10"));
+      if (!Number.isFinite(amount) || amount <= 0) return setStatus("充值金额必须大于 0。", true);
+      try { const user = await api(`/admin/users/${button.dataset.topup}/topup`, { method: "POST", body: JSON.stringify({ amount }) }); setStatus(`${user.name} 的余额已更新为 ${user.balance}。`); await loadUsers(); } catch (error) { setStatus(error.message, true); }
+    });
+  </script>
+</body>
+</html>

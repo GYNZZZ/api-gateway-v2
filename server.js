@@ -19,6 +19,7 @@ const usersFile = path.join(__dirname, "users.json");
 const logsFile = path.join(__dirname, "logs.json");
 
 app.use(express.json({ limit: "1mb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -86,6 +87,10 @@ function adminAuth(req, res, next) {
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", mockMode, timestamp: new Date().toISOString() });
+});
+
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
 app.get("/v1/me", userAuth, (req, res) => {
@@ -219,6 +224,58 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
 app.get("/admin/logs", adminAuth, (req, res) => {
   const logs = readJson(logsFile);
   res.json({ total: logs.length, data: logs.slice().reverse() });
+});
+
+app.get("/admin/users", adminAuth, (req, res) => {
+  const users = readJson(usersFile);
+  res.json({ total: users.length, data: users });
+});
+
+app.post("/admin/users", adminAuth, (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const balance = Number(req.body.balance ?? 0);
+  const requestedApiKey = String(req.body.apiKey || "").trim();
+
+  if (!name) {
+    return res.status(400).json({ error: { message: "name is required", type: "invalid_request_error" } });
+  }
+  if (!Number.isFinite(balance) || balance < 0) {
+    return res.status(400).json({ error: { message: "balance must be a non-negative number", type: "invalid_request_error" } });
+  }
+
+  const users = readJson(usersFile);
+  const apiKey = requestedApiKey || `sk-gw-${crypto.randomBytes(18).toString("hex")}`;
+  if (users.some((user) => user.apiKey === apiKey)) {
+    return res.status(409).json({ error: { message: "API key already exists", type: "conflict_error" } });
+  }
+
+  const user = {
+    id: users.reduce((maxId, candidate) => Math.max(maxId, Number(candidate.id) || 0), 0) + 1,
+    name,
+    apiKey,
+    balance,
+  };
+  users.push(user);
+  writeJson(usersFile, users);
+  return res.status(201).json(user);
+});
+
+app.post("/admin/users/:id/topup", adminAuth, (req, res) => {
+  const userId = Number(req.params.id);
+  const amount = Number(req.body.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: { message: "amount must be greater than 0", type: "invalid_request_error" } });
+  }
+
+  const users = readJson(usersFile);
+  const user = users.find((candidate) => candidate.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: { message: "User not found", type: "not_found_error" } });
+  }
+
+  user.balance += amount;
+  writeJson(usersFile, users);
+  return res.json({ id: user.id, name: user.name, balance: user.balance });
 });
 
 app.use((error, req, res, next) => {

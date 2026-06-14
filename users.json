@@ -3,12 +3,18 @@
     "id": 1,
     "name": "test_user_1",
     "apiKey": "user-key-001",
-    "balance": 99
+    "balance": 599
   },
   {
     "id": 2,
     "name": "test_user_2",
     "apiKey": "user-key-002",
     "balance": 50
+  },
+  {
+    "id": 3,
+    "name": "test_user_1",
+    "apiKey": "sk-gw-28a0df437b8c0e2e4c600f4f922d60cd0382",
+    "balance": 100
   }
 ]
