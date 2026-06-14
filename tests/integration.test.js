@@ -115,6 +115,15 @@ before(async () => {
           if (!res.destroyed) res.end(JSON.stringify({ id: "late-response" }));
         }, 200);
       }
+      if (scenario === "no-usage") {
+        res.writeHead(200);
+        return res.end(JSON.stringify({
+          id: "chatcmpl-no-usage",
+          object: "chat.completion",
+          model: payload.model,
+          choices: [{ index: 0, message: { role: "assistant", content: "No usage response" }, finish_reason: "stop" }],
+        }));
+      }
       res.writeHead(200);
       return res.end(JSON.stringify({
         id: "chatcmpl-fake-upstream",
@@ -191,12 +200,23 @@ test("valid user API key returns the current user", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, {
-    id: 1, name: "test_user_1", balance: 10,
+    id: 1, name: "test_user_1", balanceUsd: 10, balance: 10,
     keyPreview: "user***-001", apiKeyEnabled: true,
   });
 });
 
-test("successful chat completion deducts balance and writes a log", async () => {
+test("balanceUsd takes precedence over the legacy balance field", async () => {
+  writeJson(usersFile, [{ ...initialUsers[0], balance: 10, balanceUsd: 3.25 }]);
+  const response = await request(app).get("/v1/me").set("Authorization", "Bearer user-key-001");
+  assert.equal(response.status, 200);
+  assert.equal(response.body.balanceUsd, 3.25);
+  assert.equal(response.body.balance, 3.25);
+  const storedUser = readJson(usersFile)[0];
+  assert.equal(storedUser.balanceUsd, 3.25);
+  assert.equal(storedUser.balance, 3.25);
+});
+
+test("successful mock chat deducts token charge and writes detailed usage fields", async () => {
   const response = await request(app)
     .post("/v1/chat/completions")
     .set("Authorization", "Bearer user-key-001")
@@ -206,13 +226,25 @@ test("successful chat completion deducts balance and writes a log", async () => 
   assert.match(response.body.id, /^chatcmpl-mock-/);
 
   const user = readJson(usersFile).find((candidate) => candidate.id === 1);
-  assert.equal(user.balance, 9);
+  assert.equal(user.balanceUsd, 9.99829);
+  assert.equal(user.balance, 9.99829);
 
   const logs = readJson(logsFile);
   const latestLog = logs.at(-1);
   assert.equal(latestLog.userId, 1);
   assert.equal(latestLog.status, 200);
-  assert.equal(latestLog.charged, 1);
+  assert.equal(latestLog.chargeUsd, 0.00171);
+  assert.equal(latestLog.charged, 0.00171);
+  assert.equal(latestLog.inputTokens, 800);
+  assert.equal(latestLog.cachedInputTokens, 200);
+  assert.equal(latestLog.outputTokens, 500);
+  assert.equal(latestLog.totalTokens, 1500);
+  assert.equal(latestLog.inputCostUsd, 0.00048);
+  assert.equal(latestLog.cachedInputCostUsd, 0.00003);
+  assert.equal(latestLog.outputCostUsd, 0.0012);
+  assert.equal(latestLog.usageMissing, false);
+  assert.equal(latestLog.balanceBefore, 10);
+  assert.equal(latestLog.balanceAfter, 9.99829);
   assert.equal(latestLog.mode, "mock");
 });
 
@@ -225,6 +257,7 @@ test("insufficient balance returns 402 without deducting balance", async () => {
   assert.equal(response.status, 402);
   const user = readJson(usersFile).find((candidate) => candidate.id === 3);
   assert.equal(user.balance, 0);
+  assert.equal(user.balanceUsd, 0);
   const latestLog = readJson(logsFile).at(-1);
   assert.equal(latestLog.userId, 3);
   assert.equal(latestLog.charged, 0);
@@ -273,14 +306,15 @@ test("valid admin key can access logs and users", async () => {
   assert.ok(users.body.data.every((user) => !("apiKeyHash" in user)));
 });
 
-test("admin can create a user, top up balance, and authenticate the new key", async () => {
+test("admin can create a user with USD balance, top up, and authenticate the new key", async () => {
   const created = await request(app)
     .post("/admin/users")
     .set("x-admin-api-key", "test-admin-key")
-    .send({ name: "new_test_user", balance: 2 });
+    .send({ name: "new_test_user", balanceUsd: 2 });
 
   assert.equal(created.status, 201);
   assert.equal(created.body.balance, 2);
+  assert.equal(created.body.balanceUsd, 2);
   assert.equal(typeof created.body.apiKey, "string");
 
   const topup = await request(app)
@@ -290,6 +324,7 @@ test("admin can create a user, top up balance, and authenticate the new key", as
 
   assert.equal(topup.status, 200);
   assert.equal(topup.body.balance, 10);
+  assert.equal(topup.body.balanceUsd, 10);
 
   const me = await request(app)
     .get("/v1/me")
@@ -298,6 +333,7 @@ test("admin can create a user, top up balance, and authenticate the new key", as
   assert.equal(me.status, 200);
   assert.equal(me.body.name, "new_test_user");
   assert.equal(me.body.balance, 10);
+  assert.equal(me.body.balanceUsd, 10);
 });
 
 test("legacy plaintext API keys are migrated and no longer stored", async () => {
@@ -307,6 +343,7 @@ test("legacy plaintext API keys are migrated and no longer stored", async () => 
   assert.ok(storedUsers.every((user) => !("apiKey" in user)));
   assert.equal(storedUsers[0].apiKeyHash, hashApiKey("user-key-001"));
   assert.equal(storedUsers[0].keyPreview, "user***-001");
+  assert.equal(storedUsers[0].balanceUsd, 10);
 });
 
 test("admin can disable and re-enable a user API key", async () => {
@@ -440,7 +477,7 @@ test("MOCK_MODE=true never calls the configured upstream", async () => {
   assert.equal(fakeUpstreamCalls, 0);
 });
 
-test("MOCK_MODE=false forwards to fake upstream and charges on success", async () => {
+test("MOCK_MODE=false forwards to fake upstream and charges from returned usage", async () => {
   useFakeUpstream();
   const response = await request(app).post("/v1/chat/completions")
     .set("Authorization", "Bearer user-key-001")
@@ -450,11 +487,37 @@ test("MOCK_MODE=false forwards to fake upstream and charges on success", async (
   assert.equal(response.body.model, "gpt-4.1-mini");
   assert.equal(fakeUpstreamCalls, 1);
   assert.equal(fakeUpstreamAuthorization, "Bearer fake-upstream-secret");
-  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balanceUsd, 9.999989);
   const latestLog = readJson(logsFile).at(-1);
   assert.equal(latestLog.mode, "upstream");
   assert.deepEqual(latestLog.usage, { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 });
+  assert.equal(latestLog.chargeUsd, 0.000011);
+  assert.equal(latestLog.inputTokens, 3);
+  assert.equal(latestLog.cachedInputTokens, 0);
+  assert.equal(latestLog.outputTokens, 4);
+  assert.equal(latestLog.totalTokens, 7);
+  assert.equal(latestLog.balanceBefore, 10);
+  assert.equal(latestLog.balanceAfter, 9.999989);
   assert.equal(JSON.stringify(latestLog).includes("fake-upstream-secret"), false);
+});
+
+test("successful response without usage charges zero and marks usage missing", async () => {
+  useFakeUpstream();
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "no-usage" }] });
+  assert.equal(response.status, 200);
+  const user = readJson(usersFile).find((candidate) => candidate.id === 1);
+  assert.equal(user.balanceUsd, 10);
+  const latestLog = readJson(logsFile).at(-1);
+  assert.equal(latestLog.chargeUsd, 0);
+  assert.equal(latestLog.charged, 0);
+  assert.equal(latestLog.usageMissing, true);
+  assert.equal(latestLog.inputTokens, 0);
+  assert.equal(latestLog.outputTokens, 0);
+  assert.equal(latestLog.totalTokens, 0);
+  assert.equal(latestLog.balanceBefore, 10);
+  assert.equal(latestLog.balanceAfter, 10);
 });
 
 test("upstream HTTP failure is returned and does not charge", async () => {
@@ -526,7 +589,7 @@ test("per-user rate limit returns 429 without charging or calling upstream", asy
   assert.equal(second.status, 429);
   assert.equal(second.body.error.type, "rate_limit_error");
   assert.equal(fakeUpstreamCalls, 1);
-  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balanceUsd, 9.999989);
   const latestLog = readJson(logsFile).at(-1);
   assert.equal(latestLog.status, 429);
   assert.equal(latestLog.charged, 0);
@@ -543,7 +606,7 @@ test("global rate limit applies across users", async () => {
   const limited = await call("user-key-001");
   assert.equal(limited.status, 429);
   assert.equal(limited.body.error.message, "Global rate limit exceeded");
-  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 9);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balanceUsd, 9.99829);
 });
 
 test("admin can update rate limit settings", async () => {
@@ -565,5 +628,5 @@ test("disabling rate limiting removes request limits", async () => {
       .send({ messages: [{ role: "user", content: "Hello" }] });
     assert.equal(response.status, 200);
   }
-  assert.equal(readJson(usersFile).find((user) => user.id === 1).balance, 7);
+  assert.equal(readJson(usersFile).find((user) => user.id === 1).balanceUsd, 9.99487);
 });

@@ -33,12 +33,12 @@
           <div class="section-heading"><div><p class="eyebrow">概览</p><h2>数据概览</h2></div><button id="refreshButton" class="button ghost" type="button">刷新</button></div>
           <div class="metric-grid admin-metric-grid">
             <article class="metric-card violet"><div class="metric-icon">U</div><div><span>用户总数</span><strong id="userCount">--</strong><small>已创建用户</small></div></article>
-            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>总余额</span><strong id="totalBalance">--</strong><small>当前可用点数</small></div></article>
+            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>用户总余额</span><strong id="totalBalance">--</strong><small>USD 可用余额</small></div></article>
             <article class="metric-card indigo"><div class="metric-icon">C</div><div><span>总调用次数</span><strong id="logCount">--</strong><small>全部日志</small></div></article>
             <article class="metric-card cyan"><div class="metric-icon">S</div><div><span>成功调用次数</span><strong id="successCount">--</strong><small>HTTP 2xx</small></div></article>
             <article class="metric-card violet"><div class="metric-icon">F</div><div><span>失败调用次数</span><strong id="failureCount">--</strong><small>非 HTTP 2xx</small></div></article>
             <article class="metric-card blue"><div class="metric-icon">T</div><div><span>今日调用次数</span><strong id="todayCount">--</strong><small>按本地日期统计</small></div></article>
-            <article class="metric-card indigo"><div class="metric-icon">P</div><div><span>总扣费点数</span><strong id="totalCharged">--</strong><small>charged 汇总</small></div></article>
+            <article class="metric-card indigo"><div class="metric-icon">$</div><div><span>总扣费金额</span><strong id="totalCharged">--</strong><small>实际 token 扣费</small></div></article>
             <article class="metric-card cyan"><div class="metric-icon">T</div><div><span>总 token</span><strong id="totalTokens">--</strong><small>输入与输出总量</small></div></article>
             <article class="metric-card violet"><div class="metric-icon">I</div><div><span>输入 token</span><strong id="promptTokens">--</strong><small>请求输入用量</small></div></article>
             <article class="metric-card blue"><div class="metric-icon">O</div><div><span>输出 token</span><strong id="completionTokens">--</strong><small>模型输出用量</small></div></article>
@@ -52,7 +52,7 @@
 
         <section id="create-user" class="panel section-block create-panel">
           <div class="panel-heading"><div><p class="eyebrow">新账户</p><h2>创建用户</h2><p>系统会自动生成安全的用户 API Key。</p></div></div>
-          <form id="createForm" class="create-form"><label class="field"><span>用户名</span><input id="newName" required maxlength="80" placeholder="例如：team_alpha"></label><label class="field"><span>初始余额</span><input id="newBalance" type="number" min="0" step="0.01" value="0" required></label><button id="createButton" class="button primary" type="submit"><span class="button-label">创建用户</span><span class="spinner"></span></button></form>
+          <form id="createForm" class="create-form"><label class="field"><span>用户名</span><input id="newName" required maxlength="80" placeholder="例如：team_alpha"></label><label class="field"><span>初始余额 USD</span><input id="newBalance" type="number" min="0" step="0.000001" value="0" required></label><button id="createButton" class="button primary" type="submit"><span class="button-label">创建用户</span><span class="spinner"></span></button></form>
           <div id="createdKey" class="created-key" hidden><div><span>新用户 API Key（仅显示一次）</span><code id="createdKeyValue"></code></div><button id="dismissCreatedKey" class="icon-button" type="button">关闭</button></div>
         </section>
 
@@ -64,8 +64,8 @@
           </div>
           <article class="panel section-block config-card"><div class="panel-heading"><div><p class="eyebrow">供应商</p><h2>供应商列表</h2><p>这里只显示环境变量名，不读取或展示真实上游 API Key。</p></div></div><div class="table-shell"><table><thead><tr><th>Provider ID</th><th>名称</th><th>Base URL</th><th>Key 环境变量</th><th>状态</th><th class="align-right">操作</th></tr></thead><tbody id="providersBody"><tr><td colspan="6"><div class="empty-state">连接后加载供应商</div></td></tr></tbody></table></div></article>
           <article class="panel section-block config-card"><div class="panel-heading"><div><p class="eyebrow">模型</p><h2>模型管理</h2></div></div>
-            <form id="modelForm" class="compact-form model-form"><label class="field"><span>Model ID</span><input id="modelId" required placeholder="gpt-4.1-mini"></label><label class="field"><span>模型名称</span><input id="modelName" required placeholder="GPT 4.1 Mini"></label><label class="field"><span>供应商</span><select id="modelProviderId" required></select></label><label class="field"><span>价格倍率</span><input id="modelPriceMultiplier" type="number" min="0" step="0.01" value="1" required></label><label class="toggle-field"><input id="modelIsDefault" type="checkbox"><span>设为默认</span></label><button class="button primary" type="submit">添加模型</button></form>
-            <div class="table-shell config-table"><table><thead><tr><th>Model ID</th><th>模型名称</th><th>供应商</th><th>启用</th><th>默认</th><th>点数价格</th><th>输入成本</th><th>输出成本</th><th>销售倍率</th><th>输入售价</th><th>输出售价</th><th>调用次数</th><th>token 总量</th><th class="align-right">操作</th></tr></thead><tbody id="modelsBody"><tr><td colspan="14"><div class="empty-state">连接后加载模型</div></td></tr></tbody></table></div>
+            <form id="modelForm" class="compact-form model-form"><label class="field"><span>Model ID</span><input id="modelId" required placeholder="gpt-4.1-mini"></label><label class="field"><span>模型名称</span><input id="modelName" required placeholder="GPT 4.1 Mini"></label><label class="field"><span>供应商</span><select id="modelProviderId" required></select></label><label class="toggle-field"><input id="modelIsDefault" type="checkbox"><span>设为默认</span></label><button class="button primary" type="submit">添加模型</button></form>
+            <div class="table-shell config-table"><table><thead><tr><th>Model ID</th><th>模型名称</th><th>供应商</th><th>启用</th><th>默认</th><th>输入成本</th><th>输出成本</th><th>销售倍率</th><th>输入售价</th><th>输出售价</th><th>调用次数</th><th>token 总量</th><th class="align-right">操作</th></tr></thead><tbody id="modelsBody"><tr><td colspan="13"><div class="empty-state">连接后加载模型</div></td></tr></tbody></table></div>
           </article>
         </section>
 
@@ -73,7 +73,7 @@
       </main>
     </div>
   </div>
-  <dialog id="topupDialog" class="dialog"><form id="topupForm" method="dialog"><div class="dialog-heading"><div><p class="eyebrow">余额</p><h2>用户充值</h2></div><button id="closeTopup" class="icon-button" type="button">关闭</button></div><p>为 <strong id="topupUserName"></strong> 增加余额。</p><label class="field"><span>充值点数</span><input id="topupAmount" type="number" min="0.01" step="0.01" value="10" required autofocus></label><div class="dialog-actions"><button id="cancelTopup" class="button ghost" type="button">取消</button><button id="confirmTopup" class="button primary" type="submit"><span class="button-label">确认充值</span><span class="spinner"></span></button></div></form></dialog>
+  <dialog id="topupDialog" class="dialog"><form id="topupForm" method="dialog"><div class="dialog-heading"><div><p class="eyebrow">USD 余额</p><h2>用户充值</h2></div><button id="closeTopup" class="icon-button" type="button">关闭</button></div><p>为 <strong id="topupUserName"></strong> 增加 USD 余额。</p><label class="field"><span>充值金额 USD</span><input id="topupAmount" type="number" min="0.000001" step="0.000001" value="10" required autofocus></label><div class="dialog-actions"><button id="cancelTopup" class="button ghost" type="button">取消</button><button id="confirmTopup" class="button primary" type="submit"><span class="button-label">确认充值</span><span class="spinner"></span></button></div></form></dialog>
   <script src="/admin.js" defer></script>
 </body>
 </html>

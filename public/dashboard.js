@@ -25,8 +25,6 @@ let noticeTimer = null;
 
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;" })[char]); }
 function formatNumber(value) { return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(Number(value) || 0); }
-function modelPrice(model) { const value = Number(model?.priceMultiplier); return Number.isFinite(value) ? value : 1; }
-function priceLabel(model) { return `${formatNumber(modelPrice(model))} 点 / 次`; }
 function formatUsd(value) { return `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(Number(value) || 0)}`; }
 function pricingValues(model) {
   const pricing = model?.pricing || {};
@@ -53,18 +51,18 @@ async function api(path) {
 
 function renderAccount() {
   elements.userName.textContent = currentUser?.name || "--";
-  elements.balance.textContent = currentUser ? formatNumber(currentUser.balance) : "--";
+  elements.balance.textContent = currentUser ? formatUsd(currentUser.balanceUsd ?? currentUser.balance) : "--";
   elements.logCount.textContent = currentUser ? formatNumber(logs.length) : "--";
   const successful = logs.filter(isSuccess).length;
   const metrics = {
     successCount: successful,
     failureCount: logs.length - successful,
-    totalCharged: logs.reduce((sum, log) => sum + Number(log.charged || 0), 0),
+    totalCharged: logs.reduce((sum, log) => sum + Number(log.chargeUsd ?? log.charged ?? 0), 0),
     totalTokens: logs.reduce((sum, log) => sum + tokenValue(log, "total_tokens"), 0),
     promptTokens: logs.reduce((sum, log) => sum + tokenValue(log, "prompt_tokens"), 0),
     completionTokens: logs.reduce((sum, log) => sum + tokenValue(log, "completion_tokens"), 0),
   };
-  for (const [id, value] of Object.entries(metrics)) elements[id].textContent = currentUser ? formatNumber(value) : "--";
+  for (const [id, value] of Object.entries(metrics)) elements[id].textContent = currentUser ? (id === "totalCharged" ? formatUsd(value) : formatNumber(value)) : "--";
   elements.logoutButton.hidden = !currentUser;
 }
 
@@ -80,15 +78,15 @@ function renderModels() {
       return `<button class="model-card ${model.id === selectedModelId ? "selected" : ""}" type="button" data-model-id="${escapeHtml(model.id)}">
         <span class="model-card-top"><strong>${escapeHtml(model.name || model.id)}</strong>${model.isDefault ? '<span class="default-badge">默认</span>' : ""}</span>
         <code>${escapeHtml(model.id)}</code>
-        <span class="model-details"><span>供应商：${escapeHtml(model.providerId || "-")}</span><b>${escapeHtml(priceLabel(model))}</b></span>
+        <span class="model-details"><span>供应商：${escapeHtml(model.providerId || "-")}</span><b>按 token 用量计费</b></span>
         <span class="pricing-group"><strong>上游成本参考</strong><span>输入成本：${formatUsd(baseInput)} / 1M tokens</span><span>缓存输入成本：${formatUsd(baseCachedInput)} / 1M tokens</span><span>输出成本：${formatUsd(baseOutput)} / 1M tokens</span></span>
         <span class="pricing-group sale"><strong>对用户参考售价</strong><span>销售倍率：${formatNumber(saleMultiplier)} 倍</span><span>输入售价：${formatUsd(baseInput * saleMultiplier)} / 1M tokens</span><span>缓存输入售价：${formatUsd(baseCachedInput * saleMultiplier)} / 1M tokens</span><span>输出售价：${formatUsd(baseOutput * saleMultiplier)} / 1M tokens</span></span>
-        <small class="billing-note">当前实际扣费仍按点数/次简化计算</small>
+        <small class="billing-note">实际扣费按 token 用量计算，最终以 usage 为准</small>
       </button>`;
     }).join("");
   }
   const selected = models.find((model) => model.id === selectedModelId);
-  elements.selectedModelHint.textContent = selected ? `已选择：${selected.name || selected.id}（${priceLabel(selected)}）` : "请先选择模型";
+  elements.selectedModelHint.textContent = selected ? `已选择：${selected.name || selected.id}（按 token 用量计费）` : "请先选择模型";
   elements.connectModelButton.disabled = !selected;
   if (!selected) elements.connectionPanel.hidden = true;
 }
@@ -98,7 +96,7 @@ function renderLogs() {
   if (!logs.length) { elements.logsBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">当前账户暂无调用日志</div></td></tr>'; return; }
   elements.logsBody.innerHTML = logs.map((log) => {
     const success = Number(log.status) >= 200 && Number(log.status) < 300;
-    return `<tr><td>${escapeHtml(new Date(log.timestamp).toLocaleString("zh-CN"))}</td><td>${escapeHtml(`${log.method || ""} ${log.route || ""}`.trim())}</td><td>${escapeHtml(log.model || "-")}</td><td><span class="status-pill ${success ? "success" : "error"}">${escapeHtml(log.status)}</span></td><td>${formatNumber(log.charged)}</td><td>${escapeHtml(log.balanceAfter ?? log.balance ?? "-")}</td><td>${Number.isFinite(Number(log.durationMs)) ? `${log.durationMs} ms` : "-"}</td></tr>`;
+    return `<tr><td>${escapeHtml(new Date(log.timestamp).toLocaleString("zh-CN"))}</td><td>${escapeHtml(`${log.method || ""} ${log.route || ""}`.trim())}</td><td>${escapeHtml(log.model || "-")}</td><td><span class="status-pill ${success ? "success" : "error"}">${escapeHtml(log.status)}</span></td><td>${formatUsd(log.chargeUsd ?? log.charged)}</td><td>${log.balanceAfter === undefined ? "-" : formatUsd(log.balanceAfter)}</td><td>${Number.isFinite(Number(log.durationMs)) ? `${log.durationMs} ms` : "-"}</td></tr>`;
   }).join("");
 }
 
@@ -112,7 +110,7 @@ function showConnection() {
   elements.baseUrlValue.textContent = baseUrl;
   elements.authorizationValue.textContent = authorization;
   elements.modelValue.textContent = model.id;
-  elements.priceValue.textContent = priceLabel(model);
+  elements.priceValue.textContent = "按实际 token 用量与模型售价计算";
   elements.curlValue.textContent = curl;
   elements.connectionPanel.hidden = false;
   elements.connectionPanel.scrollIntoView({ behavior: "smooth", block: "start" });

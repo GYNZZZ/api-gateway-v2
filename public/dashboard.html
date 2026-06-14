@@ -44,11 +44,11 @@
           <div class="section-heading"><div><p class="eyebrow">账户</p><h2>账户概览</h2></div><button id="refreshButton" class="button ghost" type="button">刷新</button></div>
           <div class="metric-grid usage-metric-grid">
             <article class="metric-card violet"><div class="metric-icon">U</div><div><span>用户名</span><strong id="userName">--</strong><small>当前账户</small></div></article>
-            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>可用余额</span><strong id="balance">--</strong><small>剩余点数</small></div></article>
+            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>可用余额</span><strong id="balance">--</strong><small>USD 余额</small></div></article>
             <article class="metric-card indigo"><div class="metric-icon">L</div><div><span>调用次数</span><strong id="logCount">--</strong><small>当前账户记录</small></div></article>
             <article class="metric-card cyan"><div class="metric-icon">S</div><div><span>成功调用</span><strong id="successCount">--</strong><small>HTTP 2xx 响应</small></div></article>
             <article class="metric-card violet"><div class="metric-icon">F</div><div><span>失败调用</span><strong id="failureCount">--</strong><small>非 HTTP 2xx 响应</small></div></article>
-            <article class="metric-card blue"><div class="metric-icon">P</div><div><span>扣费点数</span><strong id="totalCharged">--</strong><small>全部调用扣费总和</small></div></article>
+            <article class="metric-card blue"><div class="metric-icon">$</div><div><span>累计扣费</span><strong id="totalCharged">--</strong><small>实际 token 扣费总额</small></div></article>
             <article class="metric-card indigo"><div class="metric-icon">T</div><div><span>总 token</span><strong id="totalTokens">--</strong><small>输入与输出总量</small></div></article>
             <article class="metric-card cyan"><div class="metric-icon">I</div><div><span>输入 token</span><strong id="promptTokens">--</strong><small>请求输入用量</small></div></article>
             <article class="metric-card violet"><div class="metric-icon">O</div><div><span>输出 token</span><strong id="completionTokens">--</strong><small>模型输出用量</small></div></article>
@@ -62,13 +62,13 @@
         </section>
 
         <section id="connection" class="panel section-block connection-panel" hidden>
-          <div class="panel-heading"><div><p class="eyebrow">第二步</p><h2>连接配置</h2><p>以下信息仅用于配置客户端，不会发起聊天请求或扣费。</p></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">第二步</p><h2>连接配置</h2><p>实际扣费按 token 用量计算，页面价格为参考售价，最终以响应中的 usage 为准。</p></div></div>
           <div class="connection-list">
             <div class="connection-item"><span>Base URL</span><code id="baseUrlValue"></code><button class="copy-button" data-copy="baseUrlValue" type="button">复制</button></div>
             <div class="connection-item"><span>Endpoint</span><code>/v1/chat/completions</code></div>
             <div class="connection-item"><span>Authorization</span><code id="authorizationValue"></code></div>
             <div class="connection-item"><span>Model</span><code id="modelValue"></code><button class="copy-button" data-copy="modelValue" type="button">复制</button></div>
-            <div class="connection-item"><span>价格</span><strong id="priceValue"></strong></div>
+            <div class="connection-item"><span>计费方式</span><strong id="priceValue"></strong></div>
           </div>
           <div class="curl-example"><div><span>curl 示例</span><button class="copy-button" data-copy="curlValue" type="button">复制 curl</button></div><pre><code id="curlValue"></code></pre></div>
         </section>

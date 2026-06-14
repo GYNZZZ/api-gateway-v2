@@ -18,7 +18,6 @@ const app = express();
 const port = Number(process.env.PORT) || 3000;
 const defaultModel = process.env.DEFAULT_MODEL || "gpt-4.1-mini";
 const adminApiKey = process.env.ADMIN_API_KEY || "";
-const requestCost = 1;
 const rateLimitState = {
   minute: null,
   globalCount: 0,
@@ -60,6 +59,46 @@ function validatePricing(pricing) {
     return "saleMultiplier must be greater than 0";
   }
   return null;
+}
+
+function roundUsd(value) {
+  return Math.round((Number(value) || 0) * 1000000) / 1000000;
+}
+
+function calculateTokenCharge(usage, pricingConfig) {
+  const usageMissing = !usage || typeof usage !== "object";
+  const pricing = pricingDefaults(pricingConfig);
+  const saleInput = pricing.baseInput * pricing.saleMultiplier;
+  const saleCachedInput = pricing.baseCachedInput * pricing.saleMultiplier;
+  const saleOutput = pricing.baseOutput * pricing.saleMultiplier;
+  const promptTokens = usageMissing ? 0 : Math.max(0, Number(usage.prompt_tokens) || 0);
+  const cachedInputTokens = usageMissing
+    ? 0
+    : Math.min(promptTokens, Math.max(0, Number(usage.prompt_tokens_details?.cached_tokens) || 0));
+  const inputTokens = Math.max(0, promptTokens - cachedInputTokens);
+  const outputTokens = usageMissing ? 0 : Math.max(0, Number(usage.completion_tokens) || 0);
+  const totalTokens = usageMissing
+    ? 0
+    : Math.max(0, Number(usage.total_tokens) || inputTokens + cachedInputTokens + outputTokens);
+  const inputCostUsd = roundUsd((inputTokens / 1000000) * saleInput);
+  const cachedInputCostUsd = roundUsd((cachedInputTokens / 1000000) * saleCachedInput);
+  const outputCostUsd = roundUsd((outputTokens / 1000000) * saleOutput);
+  const rawTotal = (inputTokens / 1000000) * saleInput
+    + (cachedInputTokens / 1000000) * saleCachedInput
+    + (outputTokens / 1000000) * saleOutput;
+  const chargeUsd = rawTotal > 0 && rawTotal < 0.000001 ? 0.000001 : roundUsd(rawTotal);
+
+  return {
+    chargeUsd,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    totalTokens,
+    inputCostUsd,
+    cachedInputCostUsd,
+    outputCostUsd,
+    usageMissing,
+  };
 }
 
 function resetRateLimits() {
@@ -133,18 +172,19 @@ function readUsers() {
   const users = readJson(usersFile);
   let migrated = false;
   const normalizedUsers = users.map((user) => {
-    if (!user.apiKey) {
-      return { ...user, apiKeyEnabled: user.apiKeyEnabled !== false };
+    const balanceUsd = Number.isFinite(Number(user.balanceUsd)) ? Number(user.balanceUsd) : Number(user.balance || 0);
+    let normalized = { ...user, balanceUsd, balance: balanceUsd, apiKeyEnabled: user.apiKeyEnabled !== false };
+    if (!Number.isFinite(Number(user.balanceUsd)) || Number(user.balance) !== balanceUsd) migrated = true;
+    if (user.apiKey) {
+      const { apiKey, ...safeUser } = normalized;
+      migrated = true;
+      normalized = {
+        ...safeUser,
+        apiKeyHash: hashApiKey(apiKey),
+        keyPreview: createKeyPreview(apiKey),
+      };
     }
-
-    const { apiKey, ...safeUser } = user;
-    migrated = true;
-    return {
-      ...safeUser,
-      apiKeyHash: hashApiKey(apiKey),
-      keyPreview: createKeyPreview(apiKey),
-      apiKeyEnabled: user.apiKeyEnabled !== false,
-    };
+    return normalized;
   });
 
   if (migrated) writeJson(usersFile, normalizedUsers);
@@ -155,7 +195,8 @@ function publicUser(user) {
   return {
     id: user.id,
     name: user.name,
-    balance: user.balance,
+    balanceUsd: user.balanceUsd,
+    balance: user.balanceUsd,
     keyPreview: user.keyPreview,
     apiKeyEnabled: user.apiKeyEnabled !== false,
   };
@@ -180,6 +221,16 @@ function appendLog(entry) {
   logs.push({
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
+    charged: 0,
+    chargeUsd: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    inputCostUsd: 0,
+    cachedInputCostUsd: 0,
+    outputCostUsd: 0,
+    usageMissing: !entry.usage,
     ...entry,
   });
   writeJson(logsFile, logs);
@@ -296,7 +347,7 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
     return res.status(400).json({ error: { message: "messages must be a non-empty array", type: "invalid_request_error" } });
   }
 
-  if (req.user.balance < requestCost) {
+  if (req.user.balanceUsd <= 0) {
     appendLog({
       userId: req.user.id,
       userName: req.user.name,
@@ -306,7 +357,9 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
       model,
       status: 402,
       charged: 0,
-      balance: req.user.balance,
+      chargeUsd: 0,
+      balanceBefore: req.user.balanceUsd,
+      balanceAfter: req.user.balanceUsd,
       error: "Insufficient balance",
     });
     return res.status(402).json({ error: { message: "Insufficient balance", type: "insufficient_balance" } });
@@ -323,7 +376,9 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
       model,
       status: 429,
       charged: 0,
-      balance: req.user.balance,
+      chargeUsd: 0,
+      balanceBefore: req.user.balanceUsd,
+      balanceAfter: req.user.balanceUsd,
       error: rateLimitError,
     });
     return res.status(429).json({ error: { message: rateLimitError, type: "rate_limit_error" } });
@@ -347,7 +402,12 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
             finish_reason: "stop",
           },
         ],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 500,
+          total_tokens: 1500,
+          prompt_tokens_details: { cached_tokens: 200 },
+        },
       };
     } else {
       const upstreamApiKey = process.env[provider.apiKeyEnv];
@@ -443,10 +503,11 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
 
     const users = readUsers();
     const currentUser = users.find((candidate) => candidate.id === req.user.id);
-    if (!currentUser || currentUser.balance < requestCost) {
-      throw new Error("User balance changed during request");
-    }
-    currentUser.balance -= requestCost;
+    if (!currentUser) throw new Error("User no longer exists");
+    const balanceBefore = currentUser.balanceUsd;
+    const charge = calculateTokenCharge(responseBody.usage, modelConfig.pricing);
+    currentUser.balanceUsd = roundUsd(balanceBefore - charge.chargeUsd);
+    currentUser.balance = currentUser.balanceUsd;
     writeJson(usersFile, users);
 
     appendLog({
@@ -457,8 +518,10 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
       apiKey: maskApiKey(req.userApiKey),
       model,
       status: responseStatus,
-      charged: requestCost,
-      balanceAfter: currentUser.balance,
+      charged: charge.chargeUsd,
+      ...charge,
+      balanceBefore,
+      balanceAfter: currentUser.balanceUsd,
       durationMs: Date.now() - startedAt,
       mode: mockMode ? "mock" : "upstream",
       providerId: provider.id,
@@ -609,13 +672,13 @@ app.patch("/admin/models/:id", adminAuth, (req, res) => {
 
 app.post("/admin/users", adminAuth, (req, res) => {
   const name = String(req.body.name || "").trim();
-  const balance = Number(req.body.balance ?? 0);
+  const balanceUsd = Number(req.body.balanceUsd ?? req.body.balance ?? 0);
 
   if (!name) {
     return res.status(400).json({ error: { message: "name is required", type: "invalid_request_error" } });
   }
-  if (!Number.isFinite(balance) || balance < 0) {
-    return res.status(400).json({ error: { message: "balance must be a non-negative number", type: "invalid_request_error" } });
+  if (!Number.isFinite(balanceUsd) || balanceUsd < 0) {
+    return res.status(400).json({ error: { message: "balanceUsd must be a non-negative number", type: "invalid_request_error" } });
   }
 
   const users = readUsers();
@@ -624,7 +687,8 @@ app.post("/admin/users", adminAuth, (req, res) => {
   const user = {
     id: users.reduce((maxId, candidate) => Math.max(maxId, Number(candidate.id) || 0), 0) + 1,
     name,
-    balance,
+    balanceUsd,
+    balance: balanceUsd,
     apiKeyHash: hashApiKey(apiKey),
     keyPreview: createKeyPreview(apiKey),
     apiKeyEnabled: true,
@@ -647,9 +711,10 @@ app.post("/admin/users/:id/topup", adminAuth, (req, res) => {
     return res.status(404).json({ error: { message: "User not found", type: "not_found_error" } });
   }
 
-  user.balance += amount;
+  user.balanceUsd = roundUsd(user.balanceUsd + amount);
+  user.balance = user.balanceUsd;
   writeJson(usersFile, users);
-  return res.json({ id: user.id, name: user.name, balance: user.balance });
+  return res.json({ id: user.id, name: user.name, balanceUsd: user.balanceUsd, balance: user.balanceUsd });
 });
 
 app.post("/admin/users/:id/rotate-key", adminAuth, (req, res) => {

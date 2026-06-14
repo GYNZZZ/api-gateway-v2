@@ -87,7 +87,7 @@ x-admin-api-key: <admin-api-key>
 
 ## Important Storage Note
 
-This version stores users and logs in `users.json` and `logs.json`. Render and Railway services may use ephemeral filesystems, so changes can be lost after a restart, redeploy, or instance replacement. A single-instance prototype can use a persistent disk if the platform supports it. For production or multiple instances, migrate these files to PostgreSQL before relying on the data.
+This MVP stores users and logs in `users.json` and `logs.json`. User balances are denominated in USD through `balanceUsd`; legacy `balance` values are migrated at a temporary 1:1 ratio and retained as a compatibility field. Render and Railway services may use ephemeral filesystems, so changes can be lost after a restart, redeploy, or instance replacement. A single-instance prototype can use a persistent disk if the platform supports it. For production or multiple instances, replace JSON storage with durable shared storage.
 
 ## Main Endpoints
 
@@ -139,7 +139,16 @@ The dashboards calculate reference selling prices with this formula:
 reference selling price = upstream cost price x saleMultiplier
 ```
 
-These token prices are display-only references in the current MVP. Token values from the upstream `usage` field are used for usage statistics, and missing usage counts as zero. Actual balance deduction still uses the existing simplified points-per-request logic controlled by `priceMultiplier`; it is not real token billing. A future version can upgrade the charging system to bill from real token usage.
+The gateway calculates the user-facing token prices by multiplying each upstream cost by `saleMultiplier`. Successful chat responses are charged from the returned OpenAI-compatible `usage` object:
+
+```text
+input charge = non-cached prompt tokens / 1,000,000 x input selling price
+cached input charge = cached prompt tokens / 1,000,000 x cached-input selling price
+output charge = completion tokens / 1,000,000 x output selling price
+total USD charge = input charge + cached input charge + output charge
+```
+
+Charges are rounded to at most six decimal places. A positive calculated charge below USD 0.000001 is billed as USD 0.000001. If the upstream response has no `usage`, the charge is zero and the audit log records `usageMissing: true`.
 
 The upstream base URL comes from the provider's `baseUrl` field in `config/providers.json`; it is not read from an API key environment variable.
 
@@ -151,7 +160,9 @@ UPSTREAM_API_KEY=replace-with-a-real-secret
 UPSTREAM_TIMEOUT_MS=30000
 ```
 
-The gateway charges one point only after an upstream HTTP 2xx response. Upstream errors, timeouts, missing credentials, and insufficient balance do not deduct balance. Streaming and non-chat OpenAI endpoints are not supported in this version.
+The gateway only charges after an upstream HTTP 2xx response. Accounts with a USD balance of zero or less are rejected before an upstream call. Because actual usage is known only after a successful response, this MVP allows a balance to become temporarily negative instead of implementing complex preauthorization. Upstream errors, timeouts, and missing credentials do not deduct balance.
+
+There is no payment integration, currency conversion, or automatic official-price synchronization. Administrators manually maintain model costs and top up USD balances. Streaming and non-chat OpenAI endpoints are not supported in this version.
 
 ## Rate Limiting
 
