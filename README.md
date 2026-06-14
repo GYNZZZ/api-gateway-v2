@@ -1,102 +1,95 @@
 # api-gateway-v2
 
-一个最小可运行的 OpenAI-compatible AI API Gateway。第一版使用 JSON 文件保存用户、余额和调用日志，适合 Windows 本地开发与产品原型验证。
+A minimal OpenAI-compatible API Gateway built with Node.js and Express. It includes API key authentication, user balances, request charging, JSON audit logs, upstream forwarding, and a simple browser-based admin page.
 
-## 功能
+## Requirements
 
-- 用户 API Key 与管理员 API Key 鉴权
-- 用户余额查询与成功调用固定扣费（每次 1 点）
-- 调用审计日志及 API Key 脱敏
-- OpenAI-compatible `POST /v1/chat/completions`
-- Mock 回复或真实上游转发
-- JSON 文件原子覆盖写入
+- Node.js 18 or newer
+- npm
 
-## 环境要求
+## Local Setup
 
-- Node.js 18 或更高版本
-- Windows CMD 或 PowerShell
-
-## 安装与启动
+Windows CMD:
 
 ```cmd
-cd api-gateway-v2
+cd C:\Users\gyn15\Desktop\api-gateway-v2
 copy .env.example .env
 npm install
-node server.js
+npm start
 ```
 
-服务默认运行在 `http://localhost:3000`。
+The service listens on `process.env.PORT` or port `3000` by default.
 
-## 鉴权
+Local URLs:
 
-用户接口支持：
+- Health check: `http://localhost:3000/health`
+- Admin page: `http://localhost:3000/admin`
+
+Enter the value of `ADMIN_API_KEY` in the admin page. The page sends it through the `x-admin-api-key` request header.
+
+## Environment Variables
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `MOCK_MODE` | Return mock responses instead of calling the upstream API | `true` |
+| `UPSTREAM_BASE_URL` | Upstream OpenAI-compatible API base URL | `https://api.openai.com` |
+| `UPSTREAM_API_KEY` | Secret API key for the upstream service | Set in the hosting dashboard |
+| `DEFAULT_MODEL` | Model used when a request does not specify one | `gpt-4.1-mini` |
+| `ADMIN_API_KEY` | Secret key used by admin APIs and the admin page | Set in the hosting dashboard |
+
+The platform supplies `PORT` automatically. Do not hard-code it in production.
+
+## Deploy to Render
+
+You can create a Web Service manually or use the included `render.yaml` Blueprint.
+
+Manual Render configuration:
 
 ```text
-Authorization: Bearer user-key-001
+Runtime: Node
+Build Command: npm install
+Start Command: npm start
+Health Check Path: /health
 ```
 
-也支持 `x-api-key: user-key-001`。
+Add all environment variables listed above in the Render dashboard. Keep `UPSTREAM_API_KEY` and `ADMIN_API_KEY` secret and never commit their real values.
 
-管理员接口支持：
+After deployment, replace `<your-service-url>` with the public Render URL:
+
+- `https://<your-service-url>/health`
+- `https://<your-service-url>/admin`
+- `https://<your-service-url>/v1/chat/completions`
+- `https://<your-service-url>/v1/me`
+- `https://<your-service-url>/admin/logs`
+- `https://<your-service-url>/admin/users`
+
+## API Authentication
+
+User endpoints accept either:
 
 ```text
-Authorization: Bearer admin-key-001
+Authorization: Bearer <user-api-key>
+x-api-key: <user-api-key>
 ```
 
-也支持 `x-admin-api-key: admin-key-001`。
+Admin endpoints accept either:
 
-## Windows CMD 测试命令
-
-健康检查：
-
-```cmd
-curl http://localhost:3000/health
+```text
+Authorization: Bearer <admin-api-key>
+x-admin-api-key: <admin-api-key>
 ```
 
-聊天请求：
+## Important Storage Note
 
-```cmd
-curl -X POST http://localhost:3000/v1/chat/completions -H "Authorization: Bearer user-key-001" -H "Content-Type: application/json" -d "{\"model\":\"gpt-4.1-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"
-```
+This version stores users and logs in `users.json` and `logs.json`. Render and Railway services may use ephemeral filesystems, so changes can be lost after a restart, redeploy, or instance replacement. A single-instance prototype can use a persistent disk if the platform supports it. For production or multiple instances, migrate these files to PostgreSQL before relying on the data.
 
-当前用户：
+## Main Endpoints
 
-```cmd
-curl http://localhost:3000/v1/me -H "Authorization: Bearer user-key-001"
-```
-
-管理员日志：
-
-```cmd
-curl http://localhost:3000/admin/logs -H "Authorization: Bearer admin-key-001"
-```
-
-错误用户 Key：
-
-```cmd
-curl http://localhost:3000/v1/me -H "Authorization: Bearer wrong-user-key"
-```
-
-错误管理员 Key：
-
-```cmd
-curl http://localhost:3000/admin/logs -H "Authorization: Bearer wrong-admin-key"
-```
-
-余额不足测试：先停止服务，将 `users.json` 中某个用户的 `balance` 临时改为 `0`，重启后用该用户调用聊天接口。
-
-## 上游转发
-
-在 `.env` 中设置：
-
-```dotenv
-MOCK_MODE=false
-UPSTREAM_BASE_URL=https://api.openai.com
-UPSTREAM_API_KEY=你的上游密钥
-```
-
-网关会将请求转发到 `${UPSTREAM_BASE_URL}/v1/chat/completions`。只有成功响应才会扣费，上游失败会记录日志但不扣费。
-
-## 第一版限制
-
-JSON 文件适合单进程原型，不适合多实例或高并发。生产版本建议迁移到 PostgreSQL，并使用事务完成余额扣减和日志落库；限流与缓存可再接入 Redis。
+- `GET /health`
+- `GET /admin`
+- `POST /v1/chat/completions`
+- `GET /v1/me`
+- `GET /admin/logs`
+- `GET /admin/users`
+- `POST /admin/users`
+- `POST /admin/users/:id/topup`

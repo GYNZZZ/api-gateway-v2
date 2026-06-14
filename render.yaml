@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: api-gateway-v2
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: MOCK_MODE
+        value: "true"
+      - key: UPSTREAM_BASE_URL
+        value: https://api.openai.com
+      - key: UPSTREAM_API_KEY
+        sync: false
+      - key: DEFAULT_MODEL
+        value: gpt-4.1-mini
+      - key: ADMIN_API_KEY
+        sync: false
