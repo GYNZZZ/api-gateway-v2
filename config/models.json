@@ -5,6 +5,16 @@
     "providerId": "openai",
     "enabled": true,
     "isDefault": true,
-    "priceMultiplier": 1
+    "priceMultiplier": 1,
+    "pricing": {
+      "currency": "USD",
+      "unit": "1M tokens",
+      "baseInput": 0,
+      "baseCachedInput": 0,
+      "baseOutput": 0,
+      "saleMultiplier": 1.5,
+      "source": "manual",
+      "updatedAt": "2026-06-14"
+    }
   }
 ]

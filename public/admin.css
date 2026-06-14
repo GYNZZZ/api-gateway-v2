@@ -45,6 +45,8 @@ code { font-family: "SFMono-Regular", Consolas, monospace; }
 .workspace { min-height: 100vh; margin-left: 250px; }
 .topbar { min-height: 94px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 38px; background: rgba(255,255,255,.86); border-bottom: 1px solid var(--line); backdrop-filter: blur(14px); }
 .topbar h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); letter-spacing: -.04em; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.button.compact { min-height: 34px; padding: 0 12px; }
 .eyebrow { margin: 0; color: var(--primary); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .connection-badge { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 999px; font-size: 11px; background: #f1f2f7; color: var(--muted); }
 .connection-badge span { width: 7px; height: 7px; border-radius: 50%; background: #9ca0b2; }
@@ -88,6 +90,7 @@ select:focus { border-color: #8d82f2; box-shadow: 0 0 0 4px rgba(102, 87, 232, .
 .section-heading { margin-bottom: 15px; }
 .section-heading h2 { margin-bottom: 0; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+.admin-metric-grid { grid-template-columns: repeat(5, 1fr); }
 .metric-card { position: relative; overflow: hidden; display: flex; align-items: center; gap: 15px; min-height: 122px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 8px 25px rgba(38, 42, 76, .055); }
 .metric-card::after { content: ""; position: absolute; width: 82px; height: 82px; right: -28px; top: -28px; border-radius: 50%; background: currentColor; opacity: .055; }
 .metric-icon { flex: 0 0 42px; display: grid; place-items: center; height: 42px; border-radius: 13px; color: #fff; font-size: 12px; font-weight: 850; }
@@ -153,6 +156,7 @@ tbody tr:hover { background: #fafaff; }
 
 @media (max-width: 1050px) {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .admin-metric-grid { grid-template-columns: repeat(2, 1fr); }
   .key-panel { align-items: flex-start; flex-direction: column; }
   .key-actions { width: 100%; }
   .config-grid { grid-template-columns: 1fr; }
@@ -181,6 +185,7 @@ tbody tr:hover { background: #fafaff; }
   .topbar h1 { font-size: 20px; }
   .connection-badge { padding: 8px 10px; }
   .metric-grid { grid-template-columns: 1fr; }
+  .admin-metric-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 104px; }
   .section-heading, .panel-heading { align-items: flex-start; }
   .created-key { align-items: flex-start; flex-direction: column; }

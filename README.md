@@ -22,10 +22,16 @@ The service listens on `process.env.PORT` or port `3000` by default.
 
 Local URLs:
 
+- Home and Key login: `http://localhost:3000/`
+- User dashboard: `http://localhost:3000/dashboard`
 - Health check: `http://localhost:3000/health`
 - Admin page: `http://localhost:3000/admin`
 
-Enter the value of `ADMIN_API_KEY` in the admin page. The page sends it through the `x-admin-api-key` request header.
+The home page provides two lightweight login entries. Users enter an existing user API key and administrators enter the configured `ADMIN_API_KEY`. The browser validates the key against the existing API, stores it in local storage, and then opens the corresponding dashboard.
+
+This is an MVP key-login flow, not an email/password account system. It does not provide registration, passwords, verification codes, or password recovery.
+
+The user dashboard displays account-specific call, charge, and token usage. The admin dashboard displays aggregate usage across users and per-model call/token statistics. Token totals come from the upstream response `usage` object; logs without `usage` count as zero tokens.
 
 ## Environment Variables
 
@@ -122,6 +128,18 @@ Gateway settings are stored in `config/settings.json`, providers in `config/prov
 With `MOCK_MODE=true`, chat completions are generated locally and no upstream request is made. With `MOCK_MODE=false`, the gateway finds the requested model and provider, then forwards the request to `<provider.baseUrl>/v1/chat/completions`.
 
 Each provider's `apiKeyEnv` field contains only an environment variable name, such as `UPSTREAM_API_KEY`. Put the real credential in that environment variable through `.env` for local development or the hosting platform's secret settings. Never place a real upstream key in `providers.json`, source code, logs, or browser pages.
+
+### Model Pricing Reference
+
+Each model can store a `pricing` object in `config/models.json`. The administrator manually maintains upstream input, cached-input, and output costs in USD per 1M tokens, along with a `saleMultiplier`.
+
+The dashboards calculate reference selling prices with this formula:
+
+```text
+reference selling price = upstream cost price x saleMultiplier
+```
+
+These token prices are display-only references in the current MVP. Token values from the upstream `usage` field are used for usage statistics, and missing usage counts as zero. Actual balance deduction still uses the existing simplified points-per-request logic controlled by `priceMultiplier`; it is not real token billing. A future version can upgrade the charging system to bill from real token usage.
 
 The upstream base URL comes from the provider's `baseUrl` field in `config/providers.json`; it is not read from an API key environment variable.
 

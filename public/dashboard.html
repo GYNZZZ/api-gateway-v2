@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>API Gateway Dashboard</title>
+  <title>API Gateway 用户中心</title>
   <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
@@ -12,25 +12,26 @@
     <aside class="sidebar">
       <a class="brand" href="#account" aria-label="API Gateway 用户中心">
         <span class="brand-mark">AG</span>
-        <span><strong>API Gateway</strong><small>User Dashboard</small></span>
+        <span><strong>API Gateway</strong><small>用户中心</small></span>
       </a>
       <nav class="nav" aria-label="用户中心导航">
         <a class="nav-link active" href="#account"><span>01</span>账户概览</a>
-        <a class="nav-link" href="#credentials"><span>02</span>API 凭证</a>
-        <a class="nav-link" href="#activity"><span>03</span>调用日志</a>
+        <a class="nav-link" href="#models"><span>02</span>选择模型</a>
+        <a class="nav-link" href="#connection"><span>03</span>连接配置</a>
+        <a class="nav-link" href="#activity"><span>04</span>调用日志</a>
       </nav>
-      <div class="sidebar-footer"><span class="pulse-dot"></span><div><strong>Gateway service</strong><small>Personal account portal</small></div></div>
+      <div class="sidebar-footer"><span class="pulse-dot"></span><div><strong>网关服务</strong><small>个人账户控制台</small></div></div>
     </aside>
 
     <div class="workspace">
       <header class="topbar">
-        <div><p class="eyebrow">Personal console</p><h1>用户中心</h1></div>
-        <div id="connectionBadge" class="connection-badge offline"><span></span><strong>未连接</strong></div>
+        <div><p class="eyebrow">个人控制台</p><h1>用户中心</h1></div>
+        <div class="topbar-actions"><button id="logoutButton" class="button ghost compact" type="button" hidden>退出登录</button><div id="connectionBadge" class="connection-badge offline"><span></span><strong>未连接</strong></div></div>
       </header>
 
       <main class="content">
         <section class="key-panel">
-          <div><p class="eyebrow">Secure access</p><h2>连接你的账户</h2><p>输入用户 API Key 以查看账户信息和个人调用记录。</p></div>
+          <div><p class="eyebrow">安全访问</p><h2>连接你的账户</h2><p>输入用户 API Key，加载账户、可用模型和个人调用记录。</p></div>
           <div class="key-actions">
             <label class="field key-field"><span>用户 API Key</span><span class="input-wrap"><input id="apiKey" type="password" placeholder="输入你的 API Key" autocomplete="current-password"><button id="toggleKey" class="icon-button" type="button">显示</button></span></label>
             <button id="connectButton" class="button primary" type="button"><span class="button-label">连接账户</span><span class="spinner"></span></button>
@@ -40,31 +41,41 @@
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
         <section id="account" class="section-block">
-          <div class="section-heading"><div><p class="eyebrow">Account</p><h2>账户概览</h2></div><button id="refreshButton" class="button ghost" type="button">刷新数据</button></div>
-          <div class="metric-grid">
-            <article class="metric-card violet"><div class="metric-icon">N</div><div><span>用户名</span><strong id="userName">--</strong><small>当前账户</small></div></article>
-            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>可用余额</span><strong id="balance">--</strong><small>API 调用额度</small></div></article>
-            <article class="metric-card indigo"><div class="metric-icon">L</div><div><span>调用日志</span><strong id="logCount">--</strong><small>当前账户记录</small></div></article>
+          <div class="section-heading"><div><p class="eyebrow">账户</p><h2>账户概览</h2></div><button id="refreshButton" class="button ghost" type="button">刷新</button></div>
+          <div class="metric-grid usage-metric-grid">
+            <article class="metric-card violet"><div class="metric-icon">U</div><div><span>用户名</span><strong id="userName">--</strong><small>当前账户</small></div></article>
+            <article class="metric-card blue"><div class="metric-icon">B</div><div><span>可用余额</span><strong id="balance">--</strong><small>剩余点数</small></div></article>
+            <article class="metric-card indigo"><div class="metric-icon">L</div><div><span>调用次数</span><strong id="logCount">--</strong><small>当前账户记录</small></div></article>
             <article class="metric-card cyan"><div class="metric-icon">S</div><div><span>成功调用</span><strong id="successCount">--</strong><small>HTTP 2xx 响应</small></div></article>
+            <article class="metric-card violet"><div class="metric-icon">F</div><div><span>失败调用</span><strong id="failureCount">--</strong><small>非 HTTP 2xx 响应</small></div></article>
+            <article class="metric-card blue"><div class="metric-icon">P</div><div><span>扣费点数</span><strong id="totalCharged">--</strong><small>全部调用扣费总和</small></div></article>
+            <article class="metric-card indigo"><div class="metric-icon">T</div><div><span>总 token</span><strong id="totalTokens">--</strong><small>输入与输出总量</small></div></article>
+            <article class="metric-card cyan"><div class="metric-icon">I</div><div><span>输入 token</span><strong id="promptTokens">--</strong><small>请求输入用量</small></div></article>
+            <article class="metric-card violet"><div class="metric-icon">O</div><div><span>输出 token</span><strong id="completionTokens">--</strong><small>模型输出用量</small></div></article>
           </div>
         </section>
 
-        <section id="credentials" class="panel section-block credential-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Credentials</p><h2>API 凭证</h2><p>你的请求应使用 Bearer 鉴权。请勿向他人泄露此 Key。</p></div></div>
-          <div class="credential-box">
-            <div><span>当前 API Key</span><code id="apiKeyDisplay">连接后显示</code></div>
+        <section id="models" class="panel section-block">
+          <div class="panel-heading"><div><p class="eyebrow">第一步</p><h2>选择模型</h2><p>选择要连接的模型，价格按每次调用显示。</p></div><span id="modelsMeta" class="count-pill">0 个模型</span></div>
+          <div id="modelsGrid" class="model-grid"><div class="empty-state">连接账户后加载可用模型</div></div>
+          <div class="model-action"><span id="selectedModelHint">请先选择模型</span><button id="connectModelButton" class="button primary" type="button" disabled>生成连接配置</button></div>
+        </section>
+
+        <section id="connection" class="panel section-block connection-panel" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">第二步</p><h2>连接配置</h2><p>以下信息仅用于配置客户端，不会发起聊天请求或扣费。</p></div></div>
+          <div class="connection-list">
+            <div class="connection-item"><span>Base URL</span><code id="baseUrlValue"></code><button class="copy-button" data-copy="baseUrlValue" type="button">复制</button></div>
+            <div class="connection-item"><span>Endpoint</span><code>/v1/chat/completions</code></div>
+            <div class="connection-item"><span>Authorization</span><code id="authorizationValue"></code></div>
+            <div class="connection-item"><span>Model</span><code id="modelValue"></code><button class="copy-button" data-copy="modelValue" type="button">复制</button></div>
+            <div class="connection-item"><span>价格</span><strong id="priceValue"></strong></div>
           </div>
-          <div class="usage-example"><span>请求头示例</span><code>Authorization: Bearer &lt;your-api-key&gt;</code></div>
+          <div class="curl-example"><div><span>curl 示例</span><button class="copy-button" data-copy="curlValue" type="button">复制 curl</button></div><pre><code id="curlValue"></code></pre></div>
         </section>
 
         <section id="activity" class="panel section-block">
-          <div class="panel-heading"><div><p class="eyebrow">Activity</p><h2>我的调用日志</h2><p>这里只展示当前 API Key 所属用户的日志。</p></div><span id="logsMeta" class="count-pill">0 logs</span></div>
-          <div class="table-shell">
-            <table>
-              <thead><tr><th>时间</th><th>路由</th><th>模型</th><th>状态</th><th>扣费</th><th>余额</th><th>耗时</th></tr></thead>
-              <tbody id="logsBody"><tr><td colspan="7"><div class="empty-state">连接账户后加载调用日志</div></td></tr></tbody>
-            </table>
-          </div>
+          <div class="panel-heading"><div><p class="eyebrow">记录</p><h2>我的调用日志</h2><p>这里只显示当前 API Key 所属用户的日志。</p></div><span id="logsMeta" class="count-pill">0 条</span></div>
+          <div class="table-shell"><table><thead><tr><th>时间</th><th>路由</th><th>模型</th><th>状态</th><th>扣费</th><th>余额</th><th>耗时</th></tr></thead><tbody id="logsBody"><tr><td colspan="7"><div class="empty-state">连接账户后加载调用日志</div></td></tr></tbody></table></div>
         </section>
       </main>
     </div>

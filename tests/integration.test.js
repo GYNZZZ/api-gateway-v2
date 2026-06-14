@@ -64,7 +64,7 @@ const initialProviders = [
   { id: "openai", name: "OpenAI Compatible", baseUrl: "https://api.openai.com", apiKeyEnv: "UPSTREAM_API_KEY", enabled: true },
 ];
 const initialModels = [
-  { id: "gpt-4.1-mini", name: "GPT 4.1 Mini", providerId: "openai", enabled: true, isDefault: true, priceMultiplier: 1 },
+  { id: "gpt-4.1-mini", name: "GPT 4.1 Mini", providerId: "openai", enabled: true, isDefault: true, priceMultiplier: 1, pricing: { currency: "USD", unit: "1M tokens", baseInput: 0.4, baseCachedInput: 0.1, baseOutput: 1.6, saleMultiplier: 1.5, source: "manual", updatedAt: "2026-06-14" } },
   { id: "disabled-model", name: "Disabled Model", providerId: "openai", enabled: false, isDefault: false, priceMultiplier: 1 },
 ];
 
@@ -163,6 +163,15 @@ test("public pages and health endpoint return 200", async () => {
   const health = await request(app).get("/health");
   assert.equal(health.body.status, "ok");
   assert.equal(health.body.mockMode, true);
+});
+
+test("home page includes user and admin key login entry points", async () => {
+  const response = await request(app).get("/");
+  assert.match(response.text, /用户 API Key/);
+  assert.match(response.text, /管理员 Key/);
+  assert.match(response.text, /进入用户中心/);
+  assert.match(response.text, /进入管理后台/);
+  assert.match(response.text, /\/index\.js/);
 });
 
 test("user authentication rejects missing and invalid API keys", async () => {
@@ -329,6 +338,30 @@ test("models endpoint returns only enabled models with enabled providers", async
   const response = await request(app).get("/v1/models").set("Authorization", "Bearer user-key-001");
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.data.map((model) => model.id), ["gpt-4.1-mini"]);
+  assert.equal(response.body.data[0].priceMultiplier, 1);
+  assert.deepEqual(response.body.data[0].pricing, initialModels[0].pricing);
+});
+
+test("admin can update a model sale multiplier exposed by the user models endpoint", async () => {
+  const updated = await request(app).patch("/admin/models/gpt-4.1-mini")
+    .set("x-admin-api-key", "test-admin-key")
+    .send({ pricing: { saleMultiplier: 2.25 } });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.pricing.saleMultiplier, 2.25);
+  assert.equal(updated.body.pricing.baseInput, 0.4);
+  assert.match(updated.body.pricing.updatedAt, /^\d{4}-\d{2}-\d{2}$/);
+
+  const models = await request(app).get("/v1/models").set("Authorization", "Bearer user-key-001");
+  assert.equal(models.status, 200);
+  assert.equal(models.body.data[0].pricing.saleMultiplier, 2.25);
+});
+
+test("model sale multiplier must be greater than zero", async () => {
+  const response = await request(app).patch("/admin/models/gpt-4.1-mini")
+    .set("x-admin-api-key", "test-admin-key")
+    .send({ pricing: { saleMultiplier: 0 } });
+  assert.equal(response.status, 400);
+  assert.match(response.body.error.message, /saleMultiplier/);
 });
 
 test("disabled models are hidden and rejected by chat completions", async () => {

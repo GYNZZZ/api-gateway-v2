@@ -39,6 +39,29 @@ function redactSecret(value, secret) {
   return String(value).split(secret).join("[redacted]");
 }
 
+function pricingDefaults(pricing = {}) {
+  return {
+    currency: String(pricing.currency || "USD"),
+    unit: String(pricing.unit || "1M tokens"),
+    baseInput: Number(pricing.baseInput ?? 0),
+    baseCachedInput: Number(pricing.baseCachedInput ?? 0),
+    baseOutput: Number(pricing.baseOutput ?? 0),
+    saleMultiplier: Number(pricing.saleMultiplier ?? 1),
+    source: "manual",
+    updatedAt: String(pricing.updatedAt || new Date().toISOString().slice(0, 10)),
+  };
+}
+
+function validatePricing(pricing) {
+  for (const field of ["baseInput", "baseCachedInput", "baseOutput"]) {
+    if (!Number.isFinite(pricing[field]) || pricing[field] < 0) return `${field} must be a non-negative number`;
+  }
+  if (!Number.isFinite(pricing.saleMultiplier) || pricing.saleMultiplier <= 0) {
+    return "saleMultiplier must be greater than 0";
+  }
+  return null;
+}
+
 function resetRateLimits() {
   rateLimitState.minute = null;
   rateLimitState.globalCount = 0;
@@ -228,12 +251,13 @@ app.get("/v1/models", userAuth, (req, res) => {
   );
   const models = readModels()
     .filter((model) => model.enabled && enabledProviders.has(model.providerId))
-    .map(({ id, name, providerId, isDefault, priceMultiplier }) => ({
+    .map(({ id, name, providerId, isDefault, priceMultiplier, pricing }) => ({
       id,
       name,
       providerId,
       isDefault: Boolean(isDefault),
       priceMultiplier,
+      pricing: pricingDefaults(pricing),
     }));
   res.json({ object: "list", data: models });
 });
@@ -542,6 +566,7 @@ app.post("/admin/models", adminAuth, (req, res) => {
     enabled: req.body.enabled !== false,
     isDefault: Boolean(req.body.isDefault),
     priceMultiplier: Number(req.body.priceMultiplier ?? 1),
+    pricing: pricingDefaults(req.body.pricing),
   };
   if (!model.id || !model.name || !model.providerId) {
     return res.status(400).json({ error: { message: "id, name and providerId are required", type: "invalid_request_error" } });
@@ -549,6 +574,8 @@ app.post("/admin/models", adminAuth, (req, res) => {
   if (models.some((item) => item.id === model.id)) {
     return res.status(409).json({ error: { message: "Model already exists", type: "conflict_error" } });
   }
+  const pricingError = validatePricing(model.pricing);
+  if (pricingError) return res.status(400).json({ error: { message: pricingError, type: "invalid_request_error" } });
   if (model.isDefault) models.forEach((item) => { item.isDefault = false; });
   models.push(model);
   saveModels(models);
@@ -562,6 +589,15 @@ app.patch("/admin/models/:id", adminAuth, (req, res) => {
   if (!model) return res.status(404).json({ error: { message: "Model not found", type: "not_found_error" } });
   for (const field of ["name", "providerId", "enabled", "isDefault", "priceMultiplier"]) {
     if (req.body[field] !== undefined) model[field] = req.body[field];
+  }
+  if (req.body.pricing !== undefined) {
+    if (!req.body.pricing || typeof req.body.pricing !== "object" || Array.isArray(req.body.pricing)) {
+      return res.status(400).json({ error: { message: "pricing must be an object", type: "invalid_request_error" } });
+    }
+    const pricing = pricingDefaults({ ...model.pricing, ...req.body.pricing, updatedAt: new Date().toISOString().slice(0, 10) });
+    const pricingError = validatePricing(pricing);
+    if (pricingError) return res.status(400).json({ error: { message: pricingError, type: "invalid_request_error" } });
+    model.pricing = pricing;
   }
   if (model.isDefault) {
     models.forEach((item) => { if (item.id !== model.id) item.isDefault = false; });
