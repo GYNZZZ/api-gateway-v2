@@ -116,6 +116,11 @@ tbody tr:hover { background: #fafaff; }
 .status-pill.error { color: #b12d49; background: #ffedf1; }
 .topup-button { padding: 7px 10px; border: 0; border-radius: 8px; color: #5b4ed4; background: #eeecff; font-size: 10px; font-weight: 800; }
 .topup-button:hover { background: #e3dfff; }
+.user-actions { display: inline-flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.topup-button.danger { color: #b12d49; background: #ffedf1; }
+.key-status { display: inline-flex; margin-left: 7px; padding: 4px 7px; border-radius: 999px; font-size: 8px; font-weight: 850; }
+.key-status.enabled { color: #087754; background: #e9f9f3; }
+.key-status.disabled { color: #b12d49; background: #ffedf1; }
 .empty-state { padding: 35px; text-align: center; color: #999dae; }
 .loading-row { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 34px; color: #85899f; }
 .loading-row::before { content: ""; width: 15px; height: 15px; border: 2px solid #dedfeb; border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }

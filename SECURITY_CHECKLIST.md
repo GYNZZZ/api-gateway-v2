@@ -1,151 +1,73 @@
-# API Gateway 安全检查清单
+# API Gateway Security Checklist
 
-## 审计结论
+## API Key Storage
 
-当前实现适合本地演示和受控原型，不应直接承载不受信任的公网商用流量。最高优先级问题是明文 API Key、JSON 文件并发安全、单一管理员密钥和缺少限流。
+- [x] User API keys are stored as SHA-256 hashes instead of plaintext.
+- [x] Stored records contain `apiKeyHash`, `keyPreview`, and `apiKeyEnabled`.
+- [x] Full keys are returned only once during user creation or key rotation.
+- [x] Administrators can disable, re-enable, and rotate user keys.
+- [x] `GET /admin/users` returns neither full keys nor hashes.
+- [ ] SHA-256 is unsalted. Generated keys have high entropy, but a database-backed production version should use a keyed hash or equivalent secret-aware design.
 
-## API Key 存储风险
+## Administrator Security
 
-- [x] 用户请求通过后端 API Key 鉴权。
-- [ ] 用户 API Key 未明文存储。
-- [ ] API Key 支持吊销、轮换、过期和权限范围。
-- [ ] 创建后只展示一次完整 API Key。
-- [ ] 仓库中不存在可用测试 Key。
+- [x] Admin endpoints require `x-admin-api-key` or Bearer authentication.
+- [ ] Replace the single shared administrator key with accounts, sessions, MFA, and RBAC before commercial use.
+- [ ] Add audit logs for user creation, balance changes, key rotation, and key enable/disable operations.
+- [ ] Use a high-entropy production administrator key and rotate it regularly.
 
-**当前事实**
+## User Data Isolation
 
-- `users.json` 被 Git 跟踪，且 `apiKey` 字段为明文。
-- 管理员 `GET /admin/users` 返回完整用户对象，因此返回完整 API Key。
-- 用户中心会在连接后显示完整 Key，并把 Key 存入浏览器 `localStorage`。
-- 管理后台也把管理员 Key 存入 `localStorage`。
+- [x] `/v1/me` derives the user from the authenticated API key.
+- [x] `/v1/logs` filters records using the authenticated user's ID.
+- [x] Integration tests verify that one user cannot read another user's logs.
+- [ ] Enforce tenant filtering in the database layer after PostgreSQL migration.
 
-**风险**
+## Log Safety
 
-- 仓库读取权限、磁盘备份、错误页面或 XSS 都可能泄露长期有效凭证。
-- `localStorage` 无过期机制，任何同源脚本都可读取。
+- [x] Request logs store masked key previews rather than complete API keys.
+- [x] Request message bodies and the upstream API key are not logged.
+- [ ] Sanitize third-party error messages before storing them.
+- [ ] Add pagination, retention limits, archival, and access auditing.
+- [ ] Prevent unauthenticated request floods from exhausting log storage.
 
-**建议**
+## Environment and Git
 
-- 数据库存储 Key 哈希与短前缀，鉴权时做哈希比较。
-- 完整 Key 仅在创建时返回一次。
-- 增加吊销、轮换、状态、创建时间和最后使用时间。
-- 立即轮换曾提交到 Git 的测试 Key。
+- [x] `.env` is ignored by Git.
+- [x] `.env` is not tracked.
+- [x] `render.yaml` does not contain real secrets.
+- [ ] Replace example credentials in every production environment.
+- [ ] Enable repository secret scanning and rotate any credential that was committed historically.
 
-## 管理员权限风险
+## Upstream API Key
 
-- [x] 管理员接口使用独立鉴权中间件。
-- [ ] 管理员权限采用用户身份、会话和 RBAC。
-- [ ] 管理操作有独立审计日志。
-- [ ] 管理员登录支持过期、退出和凭证轮换。
-- [ ] 管理员 Key 具有强度校验。
+- [x] `UPSTREAM_API_KEY` is read from the environment.
+- [x] Frontend files do not receive the upstream key.
+- [ ] Add startup validation, request timeouts, cancellation, and a key rotation procedure.
 
-**当前事实**
+## Rate Limiting and Abuse Prevention
 
-- 全部管理员共享单一 `ADMIN_API_KEY`。
-- 管理员可查看所有用户完整 Key、创建用户并修改余额。
-- 管理员失败请求没有专门的审计记录。
+- [ ] Add IP-level rate limiting.
+- [ ] Add user API key rate limiting.
+- [ ] Add stricter limits to administrator endpoints.
+- [ ] Limit concurrent upstream requests.
+- [ ] Add request timeouts and failure backoff.
+- [ ] Use Redis-backed distributed limits before multi-instance deployment.
 
-**建议**
+## HTTP and Application Security
 
-- 内测至少使用高熵随机管理员密钥并定期轮换。
-- 商用版迁移到管理员账户、短期会话、MFA 和 RBAC。
-- 对创建用户、充值、Key 操作记录操作者、时间、目标和变更前后值。
+- [ ] Add security headers and Content Security Policy.
+- [ ] Define a strict CORS policy.
+- [ ] Force HTTPS in production.
+- [ ] Validate all request bodies with schemas.
+- [ ] Use a unified JSON error handler.
+- [ ] Configure `trust proxy` correctly on hosted platforms.
 
-## 用户数据隔离风险
+## Deployment Gate
 
-- [x] `GET /v1/logs` 根据 `userAuth` 得到的 `req.user.id` 过滤。
-- [x] 前端不能通过传入用户 ID 查询其他用户日志。
-- [x] `GET /v1/me` 只返回当前用户。
-- [ ] 隔离规则有自动化回归测试。
-- [ ] 数据库查询在数据层强制带用户条件。
-
-**风险**
-
-- 当前隔离依赖内存中过滤整个 `logs.json`，未来改接口时容易遗漏。
-- 未处理用户 ID 类型变化或历史日志缺少 `userId` 的迁移问题。
-
-## 日志敏感信息检查
-
-- [x] 当前成功调用日志中的用户 API Key 使用 `maskApiKey` 脱敏。
-- [x] 当前日志不记录请求消息正文和上游 API Key。
-- [ ] 错误信息已统一净化，不会暴露内部异常。
-- [ ] 日志有保留周期、删除策略和访问审计。
-- [ ] 日志分页，避免一次返回全部记录。
-
-**当前风险**
-
-- Catch 分支把 `error.message` 写入日志，未来第三方错误可能包含内部信息。
-- `/admin/logs` 一次返回全部日志，可能造成敏感元数据批量泄露和内存压力。
-- 未鉴权用户请求也会写日志，攻击者可制造大量垃圾日志并耗尽磁盘。
-
-## `.env` 与 Git
-
-- [x] `.env` 已写入 `.gitignore`。
-- [x] 当前 `.env` 未被 Git 跟踪。
-- [x] `.env.example` 被跟踪且用于说明配置。
-- [ ] `.env.example` 不包含容易被误用的弱管理员凭证。
-- [ ] CI 启用了密钥扫描。
-
-**注意**
-
-- `.env.example` 当前包含 `ADMIN_API_KEY=admin-key-001`，只应作为本地示例，生产部署必须替换。
-- `.gitignore` 不能清除历史提交中的秘密；已经提交过的真实密钥必须轮换。
-
-## 上游 API Key 安全
-
-- [x] 上游 Key 从环境变量读取。
-- [x] `render.yaml` 使用 `sync: false`，没有写入真实 Key。
-- [x] 前端静态文件不需要也不应访问上游 Key。
-- [ ] 启动时校验生产环境必须配置有效上游 Key。
-- [ ] 上游请求有超时、取消、重试边界和 TLS 策略。
-- [ ] 上游 Key 有最小权限和定期轮换流程。
-
-## 限流和防刷缺失点
-
-- [ ] IP 级请求速率限制。
-- [ ] 用户 API Key 级速率限制。
-- [ ] 管理员接口严格限流。
-- [ ] 并发请求数限制。
-- [ ] 单次请求 Token 或内容长度业务限制。
-- [ ] 上游请求超时。
-- [ ] 异常失败次数封禁或退避。
-- [ ] Redis 分布式限流。
-
-**当前风险**
-
-- Express 仅限制 JSON 请求体为 `1mb`，不限制频率和并发。
-- 未授权请求会持续写入 `logs.json`，可被用于磁盘消耗攻击。
-- 上游 `fetch` 没有超时，连接可能长期占用进程资源。
-
-## Web 与 HTTP 安全
-
-- [ ] 使用 Helmet 或等效安全响应头。
-- [ ] 设置 Content Security Policy。
-- [ ] 明确 CORS 策略。
-- [ ] 反向代理部署时正确配置 `trust proxy`。
-- [ ] 生产环境强制 HTTPS。
-- [ ] 隐藏或减少 `X-Powered-By` 信息。
-- [ ] 对所有输入使用结构化 Schema 校验。
-- [ ] 对错误响应使用统一处理，不返回 Express HTML 错误页。
-
-## 部署前安全检查
-
-### 必须完成
-
-- [ ] 轮换所有示例或历史提交过的可用 Key。
-- [ ] 从 Git 中移除真实用户数据，停止跟踪生产 `users.json`。
-- [ ] 使用 PostgreSQL 和事务扣费。
-- [ ] API Key 改为哈希存储。
-- [ ] 配置高熵 `ADMIN_API_KEY` 和 `UPSTREAM_API_KEY`。
-- [ ] 增加限流、超时、安全响应头和输入校验。
-- [ ] 增加鉴权、越权、扣费、并发和错误处理自动化测试。
-- [ ] 配置依赖扫描、Secret scanning 和生产日志告警。
-- [ ] 确认 HTTPS、域名、代理头和环境变量配置。
-
-### 上线后持续检查
-
-- [ ] 定期轮换管理员和上游凭证。
-- [ ] 审查异常 401、402、429、500 和 502 比例。
-- [ ] 监控余额异常、日志增长、磁盘和数据库容量。
-- [ ] 定期恢复备份并验证可用性。
-- [ ] 建立安全事件响应和用户通知流程。
+- [ ] Confirm `users.json` contains no plaintext `apiKey` fields.
+- [ ] Rotate historical demo and production credentials.
+- [ ] Configure strong administrator and upstream secrets.
+- [ ] Run all integration tests in `MOCK_MODE=true`.
+- [ ] Add rate limiting, timeouts, monitoring, backups, and alerts.
+- [ ] Migrate balance and logs to PostgreSQL before untrusted commercial traffic.

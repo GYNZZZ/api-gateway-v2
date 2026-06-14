@@ -106,3 +106,9 @@ npm test
 The tests use Node.js's built-in test runner with Supertest. They force `MOCK_MODE=true`, use temporary `USERS_FILE` and `LOGS_FILE` paths, and never call the real upstream API or modify the project's `users.json` and `logs.json` files.
 
 `USERS_FILE` and `LOGS_FILE` can also be configured through environment variables when a custom JSON data location is needed.
+
+## API Key Security
+
+User API keys are stored as SHA-256 hashes in `users.json`. Stored records contain `apiKeyHash`, a masked `keyPreview`, and `apiKeyEnabled`; they do not retain the complete key.
+
+The complete API key is returned only once when an administrator creates a user or rotates a key. Save it immediately. Administrators can disable, re-enable, or rotate a user's key, and rotating a key invalidates the previous key immediately.

@@ -35,6 +35,52 @@ function writeJson(file, data) {
   fs.renameSync(tempFile, file);
 }
 
+function hashApiKey(apiKey) {
+  return crypto.createHash("sha256").update(apiKey).digest("hex");
+}
+
+function createKeyPreview(apiKey) {
+  if (!apiKey) return "unknown";
+  if (apiKey.length <= 8) return `${apiKey.slice(0, 2)}***${apiKey.slice(-2)}`;
+  return `${apiKey.slice(0, 4)}***${apiKey.slice(-4)}`;
+}
+
+function generateApiKey() {
+  return `sk-gw-${crypto.randomBytes(24).toString("hex")}`;
+}
+
+function readUsers() {
+  const users = readJson(usersFile);
+  let migrated = false;
+  const normalizedUsers = users.map((user) => {
+    if (!user.apiKey) {
+      return { ...user, apiKeyEnabled: user.apiKeyEnabled !== false };
+    }
+
+    const { apiKey, ...safeUser } = user;
+    migrated = true;
+    return {
+      ...safeUser,
+      apiKeyHash: hashApiKey(apiKey),
+      keyPreview: createKeyPreview(apiKey),
+      apiKeyEnabled: user.apiKeyEnabled !== false,
+    };
+  });
+
+  if (migrated) writeJson(usersFile, normalizedUsers);
+  return normalizedUsers;
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    balance: user.balance,
+    keyPreview: user.keyPreview,
+    apiKeyEnabled: user.apiKeyEnabled !== false,
+  };
+}
+
 function extractApiKey(req, alternateHeader) {
   const authorization = req.get("authorization") || "";
   if (authorization.toLowerCase().startsWith("bearer ")) {
@@ -61,10 +107,11 @@ function appendLog(entry) {
 
 function userAuth(req, res, next) {
   const apiKey = extractApiKey(req, "x-api-key");
-  const users = readJson(usersFile);
-  const user = users.find((candidate) => candidate.apiKey === apiKey);
+  const users = readUsers();
+  const apiKeyHash = apiKey ? hashApiKey(apiKey) : "";
+  const user = users.find((candidate) => candidate.apiKeyHash === apiKeyHash);
 
-  if (!user) {
+  if (!user || user.apiKeyEnabled === false) {
     appendLog({
       route: req.originalUrl,
       method: req.method,
@@ -110,7 +157,7 @@ app.get("/dashboard", (req, res) => {
 });
 
 app.get("/v1/me", userAuth, (req, res) => {
-  res.json({ id: req.user.id, name: req.user.name, balance: req.user.balance });
+  res.json(publicUser(req.user));
 });
 
 app.get("/v1/logs", userAuth, (req, res) => {
@@ -202,7 +249,7 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
       }
     }
 
-    const users = readJson(usersFile);
+    const users = readUsers();
     const currentUser = users.find((candidate) => candidate.id === req.user.id);
     if (!currentUser || currentUser.balance < requestCost) {
       throw new Error("User balance changed during request");
@@ -248,14 +295,13 @@ app.get("/admin/logs", adminAuth, (req, res) => {
 });
 
 app.get("/admin/users", adminAuth, (req, res) => {
-  const users = readJson(usersFile);
-  res.json({ total: users.length, data: users });
+  const users = readUsers();
+  res.json({ total: users.length, data: users.map(publicUser) });
 });
 
 app.post("/admin/users", adminAuth, (req, res) => {
   const name = String(req.body.name || "").trim();
   const balance = Number(req.body.balance ?? 0);
-  const requestedApiKey = String(req.body.apiKey || "").trim();
 
   if (!name) {
     return res.status(400).json({ error: { message: "name is required", type: "invalid_request_error" } });
@@ -264,21 +310,20 @@ app.post("/admin/users", adminAuth, (req, res) => {
     return res.status(400).json({ error: { message: "balance must be a non-negative number", type: "invalid_request_error" } });
   }
 
-  const users = readJson(usersFile);
-  const apiKey = requestedApiKey || `sk-gw-${crypto.randomBytes(18).toString("hex")}`;
-  if (users.some((user) => user.apiKey === apiKey)) {
-    return res.status(409).json({ error: { message: "API key already exists", type: "conflict_error" } });
-  }
+  const users = readUsers();
+  const apiKey = generateApiKey();
 
   const user = {
     id: users.reduce((maxId, candidate) => Math.max(maxId, Number(candidate.id) || 0), 0) + 1,
     name,
-    apiKey,
     balance,
+    apiKeyHash: hashApiKey(apiKey),
+    keyPreview: createKeyPreview(apiKey),
+    apiKeyEnabled: true,
   };
   users.push(user);
   writeJson(usersFile, users);
-  return res.status(201).json(user);
+  return res.status(201).json({ ...publicUser(user), apiKey });
 });
 
 app.post("/admin/users/:id/topup", adminAuth, (req, res) => {
@@ -288,7 +333,7 @@ app.post("/admin/users/:id/topup", adminAuth, (req, res) => {
     return res.status(400).json({ error: { message: "amount must be greater than 0", type: "invalid_request_error" } });
   }
 
-  const users = readJson(usersFile);
+  const users = readUsers();
   const user = users.find((candidate) => candidate.id === userId);
   if (!user) {
     return res.status(404).json({ error: { message: "User not found", type: "not_found_error" } });
@@ -297,6 +342,39 @@ app.post("/admin/users/:id/topup", adminAuth, (req, res) => {
   user.balance += amount;
   writeJson(usersFile, users);
   return res.json({ id: user.id, name: user.name, balance: user.balance });
+});
+
+app.post("/admin/users/:id/rotate-key", adminAuth, (req, res) => {
+  const userId = Number(req.params.id);
+  const users = readUsers();
+  const user = users.find((candidate) => candidate.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: { message: "User not found", type: "not_found_error" } });
+  }
+
+  const apiKey = generateApiKey();
+  user.apiKeyHash = hashApiKey(apiKey);
+  user.keyPreview = createKeyPreview(apiKey);
+  user.apiKeyEnabled = true;
+  writeJson(usersFile, users);
+  return res.json({ ...publicUser(user), apiKey });
+});
+
+app.patch("/admin/users/:id/api-key", adminAuth, (req, res) => {
+  const userId = Number(req.params.id);
+  if (typeof req.body.enabled !== "boolean") {
+    return res.status(400).json({ error: { message: "enabled must be a boolean", type: "invalid_request_error" } });
+  }
+
+  const users = readUsers();
+  const user = users.find((candidate) => candidate.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: { message: "User not found", type: "not_found_error" } });
+  }
+
+  user.apiKeyEnabled = req.body.enabled;
+  writeJson(usersFile, users);
+  return res.json(publicUser(user));
 });
 
 app.use((error, req, res, next) => {

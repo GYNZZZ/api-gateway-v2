@@ -2,19 +2,25 @@
   {
     "id": 1,
     "name": "test_user_1",
-    "apiKey": "user-key-001",
-    "balance": 599
+    "balance": 599,
+    "apiKeyHash": "d2822e02ffe912e59b778aa7c6dad9d809a04f6a044bd1d025b3fa0ace21589d",
+    "keyPreview": "user***-001",
+    "apiKeyEnabled": true
   },
   {
     "id": 2,
     "name": "test_user_2",
-    "apiKey": "user-key-002",
-    "balance": 50
+    "balance": 50,
+    "apiKeyHash": "5cae9e9746e4da1882f34227856690c2c5126aca82e85c77002a0675ed74a796",
+    "keyPreview": "user***-002",
+    "apiKeyEnabled": true
   },
   {
     "id": 3,
     "name": "test_user_1",
-    "apiKey": "sk-gw-28a0df437b8c0e2e4c600f4f922d60cd0382",
-    "balance": 100
+    "balance": 100,
+    "apiKeyHash": "a397df140442b6e898f6025f3fd8572e6395cca77a2da6b4152511bcbbfa6f87",
+    "keyPreview": "sk-g***0382",
+    "apiKeyEnabled": true
   }
 ]
