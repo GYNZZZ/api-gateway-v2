@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "name": "test_user_1",
+    "apiKey": "user-key-001",
+    "balance": 99
+  },
+  {
+    "id": 2,
+    "name": "test_user_2",
+    "apiKey": "user-key-002",
+    "balance": 50
+  }
+]

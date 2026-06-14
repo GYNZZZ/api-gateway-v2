@@ -1,0 +1,16 @@
+{
+  "name": "api-gateway-v2",
+  "version": "1.0.0",
+  "description": "A minimal OpenAI-compatible AI API gateway",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0"
+  }
+}
