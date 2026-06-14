@@ -4,7 +4,8 @@
   "description": "A minimal OpenAI-compatible AI API gateway",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test --test-concurrency=1"
   },
   "engines": {
     "node": ">=18"
@@ -12,5 +13,8 @@
   "dependencies": {
     "dotenv": "^16.5.0",
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
   }
 }

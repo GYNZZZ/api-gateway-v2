@@ -15,8 +15,12 @@ const defaultModel = process.env.DEFAULT_MODEL || "gpt-4.1-mini";
 const adminApiKey = process.env.ADMIN_API_KEY || "";
 const requestCost = 1;
 
-const usersFile = path.join(__dirname, "users.json");
-const logsFile = path.join(__dirname, "logs.json");
+const usersFile = process.env.USERS_FILE
+  ? path.resolve(process.env.USERS_FILE)
+  : path.join(__dirname, "users.json");
+const logsFile = process.env.LOGS_FILE
+  ? path.resolve(process.env.LOGS_FILE)
+  : path.join(__dirname, "logs.json");
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -302,7 +306,11 @@ app.use((error, req, res, next) => {
   return next(error);
 });
 
-app.listen(port, () => {
-  console.log(`api-gateway-v2 listening on http://localhost:${port}`);
-  console.log(`MOCK_MODE=${mockMode}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`api-gateway-v2 listening on http://localhost:${port}`);
+    console.log(`MOCK_MODE=${mockMode}`);
+  });
+}
+
+module.exports = app;

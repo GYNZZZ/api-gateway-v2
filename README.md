@@ -93,3 +93,16 @@ This version stores users and logs in `users.json` and `logs.json`. Render and R
 - `GET /admin/users`
 - `POST /admin/users`
 - `POST /admin/users/:id/topup`
+
+## Automated Tests
+
+Install dependencies and run the integration test suite:
+
+```cmd
+npm install
+npm test
+```
+
+The tests use Node.js's built-in test runner with Supertest. They force `MOCK_MODE=true`, use temporary `USERS_FILE` and `LOGS_FILE` paths, and never call the real upstream API or modify the project's `users.json` and `logs.json` files.
+
+`USERS_FILE` and `LOGS_FILE` can also be configured through environment variables when a custom JSON data location is needed.
