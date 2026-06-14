@@ -1,0 +1,9 @@
+﻿[
+  {
+    "id": "openai",
+    "name": "OpenAI Compatible",
+    "baseUrl": "https://api.openai.com",
+    "apiKeyEnv": "UPSTREAM_API_KEY",
+    "enabled": true
+  }
+]

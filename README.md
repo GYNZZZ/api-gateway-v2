@@ -112,3 +112,11 @@ The tests use Node.js's built-in test runner with Supertest. They force `MOCK_MO
 User API keys are stored as SHA-256 hashes in `users.json`. Stored records contain `apiKeyHash`, a masked `keyPreview`, and `apiKeyEnabled`; they do not retain the complete key.
 
 The complete API key is returned only once when an administrator creates a user or rotates a key. Save it immediately. Administrators can disable, re-enable, or rotate a user's key, and rotating a key invalidates the previous key immediately.
+
+## Provider and Model Configuration
+
+Gateway settings are stored in `config/settings.json`, providers in `config/providers.json`, and models in `config/models.json`. Administrators can manage these values through `/admin/settings`, `/admin/providers`, and `/admin/models`.
+
+`GET /v1/models` returns models that are enabled and belong to an enabled provider. Chat requests use `settings.defaultModel` when no model is supplied. Maintenance mode and disabled model/provider checks happen before charging the user.
+
+This version remains intentionally mock-only. `MOCK_MODE=true` returns local mock completions, and real upstream requests are disabled even though provider metadata contains a base URL and environment variable name.

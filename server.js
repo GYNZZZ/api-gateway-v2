@@ -3,6 +3,14 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const {
+  readSettings,
+  readProviders,
+  readModels,
+  updateSettings,
+  saveProviders,
+  saveModels,
+} = require("./config-store");
 
 dotenv.config();
 
@@ -165,9 +173,40 @@ app.get("/v1/logs", userAuth, (req, res) => {
   res.json({ total: logs.length, data: logs.slice().reverse() });
 });
 
+app.get("/v1/models", userAuth, (req, res) => {
+  const enabledProviders = new Set(
+    readProviders().filter((provider) => provider.enabled).map((provider) => provider.id)
+  );
+  const models = readModels()
+    .filter((model) => model.enabled && enabledProviders.has(model.providerId))
+    .map(({ id, name, providerId, isDefault, priceMultiplier }) => ({
+      id,
+      name,
+      providerId,
+      isDefault: Boolean(isDefault),
+      priceMultiplier,
+    }));
+  res.json({ object: "list", data: models });
+});
+
 app.post("/v1/chat/completions", userAuth, async (req, res) => {
   const startedAt = Date.now();
-  const model = req.body.model || defaultModel;
+  const settings = readSettings();
+  const model = req.body.model || settings.defaultModel || defaultModel;
+  const modelConfig = readModels().find((candidate) => candidate.id === model);
+  const provider = modelConfig
+    ? readProviders().find((candidate) => candidate.id === modelConfig.providerId)
+    : null;
+
+  if (settings.maintenanceMode) {
+    return res.status(503).json({ error: { message: "Service is under maintenance", type: "maintenance_error" } });
+  }
+  if (!modelConfig || !modelConfig.enabled) {
+    return res.status(400).json({ error: { message: "Model is not available", type: "invalid_model" } });
+  }
+  if (!provider || !provider.enabled) {
+    return res.status(400).json({ error: { message: "Provider is not available", type: "invalid_provider" } });
+  }
 
   if (!Array.isArray(req.body.messages) || req.body.messages.length === 0) {
     appendLog({
@@ -220,33 +259,7 @@ app.post("/v1/chat/completions", userAuth, async (req, res) => {
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       };
     } else {
-      if (!upstreamApiKey) throw new Error("UPSTREAM_API_KEY is not configured");
-      const upstreamResponse = await fetch(`${upstreamBaseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${upstreamApiKey}`,
-        },
-        body: JSON.stringify({ ...req.body, model }),
-      });
-      responseStatus = upstreamResponse.status;
-      responseBody = await upstreamResponse.json();
-
-      if (!upstreamResponse.ok) {
-        appendLog({
-          userId: req.user.id,
-          userName: req.user.name,
-          route: req.originalUrl,
-          method: req.method,
-          apiKey: maskApiKey(req.userApiKey),
-          model,
-          status: responseStatus,
-          charged: 0,
-          durationMs: Date.now() - startedAt,
-          error: "Upstream request failed",
-        });
-        return res.status(responseStatus).json(responseBody);
-      }
+      throw new Error("Real upstream requests are disabled in this version");
     }
 
     const users = readUsers();
@@ -297,6 +310,98 @@ app.get("/admin/logs", adminAuth, (req, res) => {
 app.get("/admin/users", adminAuth, (req, res) => {
   const users = readUsers();
   res.json({ total: users.length, data: users.map(publicUser) });
+});
+
+app.get("/admin/settings", adminAuth, (req, res) => {
+  res.json(readSettings());
+});
+
+app.patch("/admin/settings", adminAuth, (req, res) => {
+  const changes = {};
+  if (typeof req.body.maintenanceMode === "boolean") changes.maintenanceMode = req.body.maintenanceMode;
+  if (typeof req.body.defaultModel === "string" && req.body.defaultModel.trim()) {
+    changes.defaultModel = req.body.defaultModel.trim();
+  }
+  res.json(updateSettings(changes));
+});
+
+app.get("/admin/providers", adminAuth, (req, res) => {
+  const providers = readProviders();
+  res.json({ total: providers.length, data: providers });
+});
+
+app.post("/admin/providers", adminAuth, (req, res) => {
+  const providers = readProviders();
+  const provider = {
+    id: String(req.body.id || "").trim(),
+    name: String(req.body.name || "").trim(),
+    baseUrl: String(req.body.baseUrl || "").trim(),
+    apiKeyEnv: String(req.body.apiKeyEnv || "UPSTREAM_API_KEY").trim(),
+    enabled: req.body.enabled !== false,
+  };
+  if (!provider.id || !provider.name || !provider.baseUrl) {
+    return res.status(400).json({ error: { message: "id, name and baseUrl are required", type: "invalid_request_error" } });
+  }
+  if (providers.some((item) => item.id === provider.id)) {
+    return res.status(409).json({ error: { message: "Provider already exists", type: "conflict_error" } });
+  }
+  providers.push(provider);
+  saveProviders(providers);
+  return res.status(201).json(provider);
+});
+
+app.patch("/admin/providers/:id", adminAuth, (req, res) => {
+  const providers = readProviders();
+  const provider = providers.find((item) => item.id === req.params.id);
+  if (!provider) return res.status(404).json({ error: { message: "Provider not found", type: "not_found_error" } });
+  for (const field of ["name", "baseUrl", "apiKeyEnv", "enabled"]) {
+    if (req.body[field] !== undefined) provider[field] = req.body[field];
+  }
+  saveProviders(providers);
+  res.json(provider);
+});
+
+app.get("/admin/models", adminAuth, (req, res) => {
+  const models = readModels();
+  res.json({ total: models.length, data: models });
+});
+
+app.post("/admin/models", adminAuth, (req, res) => {
+  const models = readModels();
+  const model = {
+    id: String(req.body.id || "").trim(),
+    name: String(req.body.name || "").trim(),
+    providerId: String(req.body.providerId || "").trim(),
+    enabled: req.body.enabled !== false,
+    isDefault: Boolean(req.body.isDefault),
+    priceMultiplier: Number(req.body.priceMultiplier ?? 1),
+  };
+  if (!model.id || !model.name || !model.providerId) {
+    return res.status(400).json({ error: { message: "id, name and providerId are required", type: "invalid_request_error" } });
+  }
+  if (models.some((item) => item.id === model.id)) {
+    return res.status(409).json({ error: { message: "Model already exists", type: "conflict_error" } });
+  }
+  if (model.isDefault) models.forEach((item) => { item.isDefault = false; });
+  models.push(model);
+  saveModels(models);
+  if (model.isDefault) updateSettings({ defaultModel: model.id });
+  return res.status(201).json(model);
+});
+
+app.patch("/admin/models/:id", adminAuth, (req, res) => {
+  const models = readModels();
+  const model = models.find((item) => item.id === req.params.id);
+  if (!model) return res.status(404).json({ error: { message: "Model not found", type: "not_found_error" } });
+  for (const field of ["name", "providerId", "enabled", "isDefault", "priceMultiplier"]) {
+    if (req.body[field] !== undefined) model[field] = req.body[field];
+  }
+  if (model.isDefault) {
+    models.forEach((item) => { if (item.id !== model.id) item.isDefault = false; });
+    updateSettings({ defaultModel: model.id });
+  }
+  saveModels(models);
+  res.json(model);
 });
 
 app.post("/admin/users", adminAuth, (req, res) => {

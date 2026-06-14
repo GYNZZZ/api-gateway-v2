@@ -9,6 +9,9 @@ const crypto = require("node:crypto");
 const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "api-gateway-v2-test-"));
 const usersFile = path.join(tempDirectory, "users.json");
 const logsFile = path.join(tempDirectory, "logs.json");
+const settingsFile = path.join(tempDirectory, "settings.json");
+const providersFile = path.join(tempDirectory, "providers.json");
+const modelsFile = path.join(tempDirectory, "models.json");
 
 const initialUsers = [
   { id: 1, name: "test_user_1", apiKey: "user-key-001", balance: 10 },
@@ -49,6 +52,15 @@ const initialLogs = [
   },
 ];
 
+const initialSettings = { maintenanceMode: false, defaultModel: "gpt-4.1-mini" };
+const initialProviders = [
+  { id: "openai", name: "OpenAI Compatible", baseUrl: "https://api.openai.com", apiKeyEnv: "UPSTREAM_API_KEY", enabled: true },
+];
+const initialModels = [
+  { id: "gpt-4.1-mini", name: "GPT 4.1 Mini", providerId: "openai", enabled: true, isDefault: true, priceMultiplier: 1 },
+  { id: "disabled-model", name: "Disabled Model", providerId: "openai", enabled: false, isDefault: false, priceMultiplier: 1 },
+];
+
 function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
@@ -67,6 +79,9 @@ process.env.ADMIN_API_KEY = "test-admin-key";
 process.env.UPSTREAM_API_KEY = "";
 process.env.USERS_FILE = usersFile;
 process.env.LOGS_FILE = logsFile;
+process.env.SETTINGS_FILE = settingsFile;
+process.env.PROVIDERS_FILE = providersFile;
+process.env.MODELS_FILE = modelsFile;
 
 let app;
 
@@ -77,6 +92,9 @@ before(() => {
 beforeEach(() => {
   writeJson(usersFile, initialUsers);
   writeJson(logsFile, initialLogs);
+  writeJson(settingsFile, initialSettings);
+  writeJson(providersFile, initialProviders);
+  writeJson(modelsFile, initialModels);
 });
 
 after(() => {
@@ -251,4 +269,75 @@ test("rotating a key invalidates the old key and enables the new key", async () 
   const storedUser = readJson(usersFile).find((user) => user.id === 1);
   assert.equal("apiKey" in storedUser, false);
   assert.equal(storedUser.apiKeyHash, hashApiKey(rotated.body.apiKey));
+});
+
+test("models endpoint returns only enabled models with enabled providers", async () => {
+  const response = await request(app).get("/v1/models").set("Authorization", "Bearer user-key-001");
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.data.map((model) => model.id), ["gpt-4.1-mini"]);
+});
+
+test("disabled models are hidden and rejected by chat completions", async () => {
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ model: "disabled-model", messages: [{ role: "user", content: "Hello" }] });
+  assert.equal(response.status, 400);
+  const models = await request(app).get("/v1/models").set("Authorization", "Bearer user-key-001");
+  assert.equal(models.body.data.some((model) => model.id === "disabled-model"), false);
+});
+
+test("maintenance mode blocks chat and disabling it restores chat", async () => {
+  const enabled = await request(app).patch("/admin/settings")
+    .set("x-admin-api-key", "test-admin-key").send({ maintenanceMode: true });
+  assert.equal(enabled.status, 200);
+  const blocked = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "Hello" }] });
+  assert.equal(blocked.status, 503);
+  await request(app).patch("/admin/settings")
+    .set("x-admin-api-key", "test-admin-key").send({ maintenanceMode: false });
+  const restored = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "Hello" }] });
+  assert.equal(restored.status, 200);
+});
+
+test("chat uses the configured default model when model is omitted", async () => {
+  const response = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "Hello" }] });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.model, "gpt-4.1-mini");
+});
+
+test("disabling a provider makes its models unavailable", async () => {
+  const updated = await request(app).patch("/admin/providers/openai")
+    .set("x-admin-api-key", "test-admin-key").send({ enabled: false });
+  assert.equal(updated.status, 200);
+  const models = await request(app).get("/v1/models").set("Authorization", "Bearer user-key-001");
+  assert.equal(models.body.data.length, 0);
+  const chat = await request(app).post("/v1/chat/completions")
+    .set("Authorization", "Bearer user-key-001")
+    .send({ messages: [{ role: "user", content: "Hello" }] });
+  assert.equal(chat.status, 400);
+});
+
+test("admin can create and update providers and models", async () => {
+  const provider = await request(app).post("/admin/providers")
+    .set("x-admin-api-key", "test-admin-key")
+    .send({ id: "demo", name: "Demo Provider", baseUrl: "https://example.invalid", apiKeyEnv: "DEMO_API_KEY" });
+  assert.equal(provider.status, 201);
+  const providerUpdate = await request(app).patch("/admin/providers/demo")
+    .set("x-admin-api-key", "test-admin-key").send({ enabled: false });
+  assert.equal(providerUpdate.body.enabled, false);
+
+  const model = await request(app).post("/admin/models")
+    .set("x-admin-api-key", "test-admin-key")
+    .send({ id: "demo-model", name: "Demo Model", providerId: "demo", enabled: true, priceMultiplier: 2 });
+  assert.equal(model.status, 201);
+  const modelUpdate = await request(app).patch("/admin/models/demo-model")
+    .set("x-admin-api-key", "test-admin-key").send({ enabled: false, isDefault: true });
+  assert.equal(modelUpdate.body.enabled, false);
+  const settings = await request(app).get("/admin/settings").set("x-admin-api-key", "test-admin-key");
+  assert.equal(settings.body.defaultModel, "demo-model");
 });

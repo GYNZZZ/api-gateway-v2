@@ -88,6 +88,46 @@
           <div id="createdKey" class="created-key" hidden><div><span>新用户 API Key</span><code id="createdKeyValue"></code></div><button id="dismissCreatedKey" class="icon-button" type="button">关闭</button></div>
         </section>
 
+        <section id="configuration" class="section-block config-section">
+          <div class="section-heading"><div><p class="eyebrow">Gateway configuration</p><h2>Provider / Model Configuration</h2></div></div>
+          <div class="config-grid">
+            <article class="panel config-card">
+              <div class="panel-heading"><div><p class="eyebrow">Settings</p><h2>Runtime settings</h2><p>Configure maintenance mode and the default model.</p></div></div>
+              <div class="settings-form">
+                <label class="toggle-field"><input id="maintenanceToggle" type="checkbox"><span>Maintenance mode</span></label>
+                <label class="field"><span>Default model</span><select id="defaultModelSelect"></select></label>
+                <button id="saveSettingsButton" class="button primary" type="button">Save settings</button>
+              </div>
+            </article>
+            <article class="panel config-card">
+              <div class="panel-heading"><div><p class="eyebrow">New provider</p><h2>Add Provider</h2></div></div>
+              <form id="providerForm" class="compact-form">
+                <label class="field"><span>ID</span><input id="providerId" required placeholder="openai"></label>
+                <label class="field"><span>Name</span><input id="providerName" required placeholder="OpenAI Compatible"></label>
+                <label class="field wide"><span>Base URL</span><input id="providerBaseUrl" type="url" required placeholder="https://api.example.com"></label>
+                <label class="field"><span>API key environment variable</span><input id="providerApiKeyEnv" required placeholder="UPSTREAM_API_KEY"></label>
+                <button class="button primary" type="submit">Add Provider</button>
+              </form>
+            </article>
+          </div>
+          <article class="panel section-block config-card">
+            <div class="panel-heading"><div><p class="eyebrow">Providers</p><h2>Provider list</h2><p>Only environment variable names are shown. Secret values are never read by this page.</p></div></div>
+            <div class="table-shell"><table><thead><tr><th>ID</th><th>Name</th><th>Base URL</th><th>Key Env</th><th>Status</th><th class="align-right">Action</th></tr></thead><tbody id="providersBody"><tr><td colspan="6"><div class="empty-state">Connect to load providers</div></td></tr></tbody></table></div>
+          </article>
+          <article class="panel section-block config-card">
+            <div class="panel-heading"><div><p class="eyebrow">Models</p><h2>Model list</h2></div></div>
+            <form id="modelForm" class="compact-form model-form">
+              <label class="field"><span>ID</span><input id="modelId" required placeholder="gpt-4.1-mini"></label>
+              <label class="field"><span>Name</span><input id="modelName" required placeholder="GPT 4.1 Mini"></label>
+              <label class="field"><span>Provider</span><select id="modelProviderId" required></select></label>
+              <label class="field"><span>Price multiplier</span><input id="modelPriceMultiplier" type="number" min="0" step="0.01" value="1" required></label>
+              <label class="toggle-field"><input id="modelIsDefault" type="checkbox"><span>Set as default</span></label>
+              <button class="button primary" type="submit">Add Model</button>
+            </form>
+            <div class="table-shell config-table"><table><thead><tr><th>ID</th><th>Name</th><th>Provider</th><th>Multiplier</th><th>Status</th><th class="align-right">Action</th></tr></thead><tbody id="modelsBody"><tr><td colspan="6"><div class="empty-state">Connect to load models</div></td></tr></tbody></table></div>
+          </article>
+        </section>
+
         <section id="logs" class="panel section-block">
           <div class="panel-heading"><div><p class="eyebrow">Activity</p><h2>调用日志</h2><p>查看接口状态、扣费和响应耗时。</p></div><span id="logsMeta" class="count-pill">0 logs</span></div>
           <div class="table-shell">

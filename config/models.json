@@ -1,0 +1,10 @@
+﻿[
+  {
+    "id": "gpt-4.1-mini",
+    "name": "GPT 4.1 Mini",
+    "providerId": "openai",
+    "enabled": true,
+    "isDefault": true,
+    "priceMultiplier": 1
+  }
+]
